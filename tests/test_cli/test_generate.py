@@ -76,3 +76,39 @@ def test_vacancy_cli_runs_service_with_default_check_and_manifest(tmp_path: Path
     assert code == 0
     assert list((tmp_path / "runs").glob("*/manifest.json"))
     assert '"ok": true' in capsys.readouterr().out
+
+
+def test_all_nine_cli_workflows_reach_generation_service_offline(tmp_path: Path, monkeypatch, capsys):
+    from types import SimpleNamespace
+    import llm_matgen.services.generation as service_module
+    from llm_matgen.__main__ import main
+
+    captured = []
+
+    class FakeService:
+        def __init__(self, source):
+            pass
+
+        def run(self, request):
+            captured.append(request.generator)
+            manifest = request.limits.output_root / request.generator / "manifest.json"
+            manifest.parent.mkdir(parents=True, exist_ok=True)
+            manifest.write_text('{"responsibility_disclaimer":"generation only"}', encoding="utf-8")
+            run = SimpleNamespace(
+                generation=SimpleNamespace(generated_count=1),
+                manifest_path=manifest,
+                errors=[],
+            )
+            return SimpleNamespace(ok=True, runs=[run])
+
+    monkeypatch.setattr(service_module, "GenerationService", FakeService)
+    monkeypatch.chdir(tmp_path)
+    for name, arguments in CASES:
+        code = main([
+            "generate", name, *arguments,
+            "--output-root", f"runs-{name}",
+        ])
+        assert code == 0
+        payload = __import__("json").loads(capsys.readouterr().out)
+        assert Path(payload["runs"][0]["manifest"]).exists()
+    assert captured == [name for name, _ in CASES]

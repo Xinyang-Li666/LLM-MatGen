@@ -87,5 +87,6 @@ python -m llm_matgen mcp --help
 - 计划 1：✅ 已完成，40 项测试通过，覆盖率 92%。
 - 计划 2：✅ 已完成，四类点缺陷生成器及端到端导出通过。
 - 计划 3：✅ 已完成（Surface、GrainBoundary、Interface、StackingFault、Dislocation）。
-- 计划 4–6：待执行（sources/CLI、cache/provenance、MCP/Skill 集成）。
+- 计划 4：✅ 已完成（sources/CLI）。
+- 计划 5–6：待执行（cache/provenance、MCP/Skill 集成）。
 - Git 提交：工作区 `.git` 当前不可写，提交步骤暂时无法执行。

@@ -189,4 +189,6 @@ class ExecutionLimits(BaseModel):
 - Task 10（九类 generate CLI）：✅ 已完成
 - Task 11（check/export CLI）：✅ 已完成
 - Task 12（安全配置）：✅ 已完成
-- Task 13：待执行
+- Task 13（CLI 端到端验收）：✅ 已完成
+
+验收：sources/services/CLI 专项 53 项测试通过；全项目 131 项测试通过，总覆盖率 91%；依赖检查无冲突。九类 CLI 工作流和 fake MP 边界均在无真实网络请求下通过。

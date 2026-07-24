@@ -184,10 +184,38 @@ def build_parser() -> argparse.ArgumentParser:
         description="Generate crystal structures with lightweight checks and reproducible manifests.",
     )
     commands = parser.add_subparsers(dest="command")
-    _add_leaf(commands, "search", "search Materials Project structures")
-    _add_leaf(commands, "download", "download Materials Project structures")
-    _add_leaf(commands, "properties", "collect Materials Project properties")
-    _add_leaf(commands, "substrates", "query substrate references")
+    search = _add_leaf(commands, "search", "search Materials Project structures")
+    search.add_argument("--element", dest="elements", action="append")
+    search.add_argument("--chemsys")
+    search.add_argument("--formula")
+    search.add_argument("--material-id", dest="material_ids", action="append")
+    search.add_argument("--n-elements", type=int)
+    search.add_argument("--formation-energy-max", type=float)
+    search.add_argument("--band-gap-min", type=float)
+    search.add_argument("--band-gap-max", type=float)
+    search.add_argument(
+        "--structure-class",
+        choices=("layered", "perovskite", "spinel", "rocksalt", "fluorite"),
+    )
+    search.add_argument("--limit", type=int, default=100)
+    search.set_defaults(_handler=_run_search)
+
+    download = _add_leaf(commands, "download", "download Materials Project structures")
+    download.add_argument("material_ids", nargs="+")
+    download.add_argument("--output-dir", default="downloads")
+    download.set_defaults(_handler=_run_download)
+
+    properties = _add_leaf(commands, "properties", "collect Materials Project properties")
+    properties.add_argument("material_ids", nargs="+")
+    properties.add_argument(
+        "--property", dest="property_names", action="append", required=True,
+        choices=("thermo", "electronic", "magnetism", "dielectric", "phonon", "elasticity"),
+    )
+    properties.set_defaults(_handler=_run_properties)
+
+    substrates = _add_leaf(commands, "substrates", "query substrate references")
+    substrates.add_argument("material_ids", nargs="+")
+    substrates.set_defaults(_handler=_run_substrates)
 
     generate = _add_leaf(commands, "generate", "generate local crystal structures")
     generators = generate.add_subparsers(dest="generator")
@@ -510,6 +538,96 @@ def _run_config_set_key(args: argparse.Namespace) -> int:
     raise ValueError(
         "credentials cannot be stored in the config file; use an environment variable or system keyring"
     )
+
+
+def _run_search(args: argparse.Namespace) -> int:
+    from llm_matgen.sources.mp import MPCollector, MaterialSearchQuery
+
+    query = MaterialSearchQuery(
+        elements=args.elements,
+        chemsys=args.chemsys,
+        formula=args.formula,
+        material_ids=args.material_ids,
+        n_elements=args.n_elements,
+        formation_energy_max=args.formation_energy_max,
+        band_gap_min=args.band_gap_min,
+        band_gap_max=args.band_gap_max,
+        structure_class=args.structure_class,
+        limit=args.limit,
+    )
+    results = MPCollector().search(query)
+    payload = []
+    for item in results:
+        classification = getattr(item, "classification", None)
+        payload.append(
+            {
+                "material_id": item.material_id,
+                "formula": getattr(item, "formula_pretty", None),
+                "band_gap": getattr(item, "band_gap", None),
+                "formation_energy_per_atom": getattr(item, "formation_energy_per_atom", None),
+                "classification": (
+                    classification.model_dump(mode="json")
+                    if hasattr(classification, "model_dump")
+                    else classification
+                ),
+            }
+        )
+    print(json.dumps({"results": payload}, ensure_ascii=False))
+    return EXIT_SUCCESS
+
+
+def _run_download(args: argparse.Namespace) -> int:
+    from llm_matgen.sources.mp import MPCollector
+
+    output_dir = _safe_workspace_path(args.output_dir)
+    result = MPCollector().download(args.material_ids, output_dir)
+    payload = {
+        "successes": [
+            {
+                "material_id": item.source_reference,
+                "path": str(item.local_path),
+                "structure_hash": getattr(item, "structure_hash", None),
+            }
+            for item in result.successes
+        ],
+        "failures": [
+            {
+                "material_id": item.material_id,
+                "error_type": item.error_type,
+                "message": item.message,
+            }
+            for item in result.failures
+        ],
+    }
+    print(json.dumps(payload, ensure_ascii=False))
+    return EXIT_PARTIAL if result.failures else EXIT_SUCCESS
+
+
+def _run_properties(args: argparse.Namespace) -> int:
+    from llm_matgen.sources.mp import MPCollector
+
+    results = MPCollector().fetch_properties(args.material_ids, args.property_names)
+    materials = []
+    for item in results:
+        properties = {
+            name: value.model_dump(mode="json") if hasattr(value, "model_dump") else value
+            for name, value in item.properties.items()
+        }
+        materials.append({"material_id": item.material_id, "properties": properties})
+    print(json.dumps({"materials": materials}, ensure_ascii=False))
+    return EXIT_SUCCESS
+
+
+def _run_substrates(args: argparse.Namespace) -> int:
+    from llm_matgen.sources.mp import MPCollector
+
+    results = MPCollector().search_substrates(args.material_ids)
+    payload = [
+        item.model_dump(mode="json") if hasattr(item, "model_dump") else item
+        for item in results
+    ]
+    print(json.dumps({"results": payload}, ensure_ascii=False, default=str))
+    return EXIT_SUCCESS
 
 
 def main(argv: list[str] | None = None) -> int:
