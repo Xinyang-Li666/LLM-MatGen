@@ -15,6 +15,7 @@ from .interstitial import InterstitialGenerator, InterstitialParams
 from .solid_solution import SolidSolutionGenerator, SolidSolutionParams
 from .vacancy import VacancyGenerator, VacancyParams
 from .surface import SurfaceGenerator, SurfaceParams
+from .grain_boundary import GrainBoundaryGenerator, GrainBoundaryParams
 
 __all__ = [
     "BaseGenerationParams",
@@ -35,4 +36,6 @@ __all__ = [
     "VacancyParams",
     "SurfaceGenerator",
     "SurfaceParams",
+    "GrainBoundaryGenerator",
+    "GrainBoundaryParams",
 ]
