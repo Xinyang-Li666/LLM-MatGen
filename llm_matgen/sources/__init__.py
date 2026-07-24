@@ -10,6 +10,7 @@ from .mp import (
     MPRateLimitError,
     MPUnavailableError,
 )
+from .classifier import ClassificationResult, DeterministicStructureClassifier, StructureClassifier
 
 __all__ = [
     "LocalSourceError",
@@ -22,4 +23,7 @@ __all__ = [
     "MPDataError",
     "MPRateLimitError",
     "MPUnavailableError",
+    "ClassificationResult",
+    "DeterministicStructureClassifier",
+    "StructureClassifier",
 ]

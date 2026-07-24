@@ -18,6 +18,11 @@ from pymatgen.core import Structure
 from pymatgen.io.cif import CifWriter
 
 from llm_matgen.io.readers import StructureReadError, read_structure
+from llm_matgen.sources.classifier import (
+    ClassificationResult,
+    DeterministicStructureClassifier,
+    StructureClassifier,
+)
 from llm_matgen.sources.models import SourceStructure
 from llm_matgen.utils.structure import structure_sha256
 
@@ -95,6 +100,7 @@ class MaterialSummary(BaseModel):
     formation_energy_per_atom: float | None = None
     band_gap: float | None = None
     structure: Any | None = None
+    classification: ClassificationResult | None = None
 
 
 @dataclass
@@ -156,6 +162,7 @@ class MPCollector:
         monotonic: Callable[[], float] = time.monotonic,
         random_fn: Callable[[], float] = random.random,
         cancel_check: Callable[[], bool] | None = None,
+        classifier: StructureClassifier | None = None,
     ):
         self._api_key = api_key or os.environ.get("MP_API_KEY")
         if not self._api_key:
@@ -177,6 +184,7 @@ class MPCollector:
         self._random = random_fn
         self._cancel_check = cancel_check or (lambda: False)
         self._last_request_started: float | None = None
+        self.classifier = classifier or DeterministicStructureClassifier()
 
     def execute(self, operation: Callable[[Any], T]) -> T:
         for attempt in range(1, self.max_attempts + 1):
@@ -268,6 +276,28 @@ class MPCollector:
                 results.append(MaterialSummary.model_validate(raw))
                 if len(results) >= self.max_results:
                     break
+            if query.structure_class is not None:
+                filtered: list[MaterialSummary] = []
+                for item in results:
+                    try:
+                        if item.structure is None:
+                            raise ValueError("summary does not include a structure")
+                        classification = self.classifier.classify(
+                            item.structure,
+                            target=query.structure_class,
+                        )
+                    except Exception as exc:
+                        classification = ClassificationResult(
+                            label="unknown",
+                            matched=False,
+                            score=0,
+                            method="classification-error",
+                            evidence={"error": type(exc).__name__},
+                        )
+                    item = item.model_copy(update={"classification": classification})
+                    if classification.matched:
+                        filtered.append(item)
+                results = filtered
             results.sort(key=lambda item: item.material_id)
             return results[: query.limit]
 

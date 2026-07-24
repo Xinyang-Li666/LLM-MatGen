@@ -127,6 +127,35 @@ def test_mp_search_query_rejects_empty_conflicting_and_system_limit():
         collector.search(MaterialSearchQuery(formula="Si", limit=1001))
 
 
+def test_mp_search_postfilters_structure_class_and_records_evidence():
+    from llm_matgen.sources.classifier import ClassificationResult
+    from llm_matgen.sources.mp import MPCollector, MaterialSearchQuery
+
+    class FakeClassifier:
+        def classify(self, structure, target=None):
+            matched = structure == "layered-structure"
+            return ClassificationResult(
+                label="layered" if matched else "unknown",
+                matched=matched,
+                score=1 if matched else 0,
+                method="fake-geometry",
+                evidence={"target": target},
+            )
+
+    endpoint = FakeSummaryEndpoint(
+        [
+            {"material_id": "mp-1", "structure": "layered-structure"},
+            {"material_id": "mp-2", "structure": "bulk-structure"},
+        ]
+    )
+    client = SimpleNamespace(materials=SimpleNamespace(summary=endpoint))
+    result = MPCollector(
+        api_key="key", client_factory=lambda key: client, classifier=FakeClassifier()
+    ).search(MaterialSearchQuery(elements=["C"], structure_class="layered"))
+    assert [item.material_id for item in result] == ["mp-1"]
+    assert result[0].classification.evidence["target"] == "layered"
+
+
 class DownloadEndpoint:
     def __init__(self, documents, failing=()):
         self.documents = documents
