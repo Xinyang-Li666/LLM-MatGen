@@ -33,6 +33,7 @@ class BaseGenerationParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     max_structures: PositiveInt = 1000
+    max_atoms_per_structure: PositiveInt = 100_000
 
 
 class RandomGenerationParams(BaseGenerationParams):

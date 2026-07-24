@@ -177,3 +177,7 @@ class DislocationParams(BaseGenerationParams):
 - pymatgen/ZSL 版本敏感代码被 backend 隔离。
 - 所有构型有确定性排序和资源上限。
 - 文档与结果只描述“生成”，不对稳定性作判断。
+## 执行状态
+
+- Task 1（Miller 指数与资源限制）：✅ 已完成
+- Task 2–12：待执行
