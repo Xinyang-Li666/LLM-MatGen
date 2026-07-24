@@ -180,4 +180,5 @@ class DislocationParams(BaseGenerationParams):
 ## 执行状态
 
 - Task 1（Miller 指数与资源限制）：✅ 已完成
-- Task 2–12：待执行
+- Task 2（Surface 单晶面生成）：✅ 已完成
+- Task 3–12：待执行
