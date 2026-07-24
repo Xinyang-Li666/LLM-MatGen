@@ -187,4 +187,5 @@ class ExecutionLimits(BaseModel):
 - Task 8（统一生成服务）：✅ 已完成
 - Task 9（CLI 骨架与帮助）：✅ 已完成
 - Task 10（九类 generate CLI）：✅ 已完成
-- Task 11–13：待执行
+- Task 11（check/export CLI）：✅ 已完成
+- Task 12–13：待执行

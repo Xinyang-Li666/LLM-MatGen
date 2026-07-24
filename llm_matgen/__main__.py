@@ -193,8 +193,20 @@ def build_parser() -> argparse.ArgumentParser:
     generators = generate.add_subparsers(dest="generator")
     _configure_generators(generators)
 
-    _add_leaf(commands, "check", "run lightweight structure checks")
-    _add_leaf(commands, "export", "convert structures to supported formats")
+    check = _add_leaf(commands, "check", "run lightweight structure checks")
+    check.add_argument("paths", nargs="+")
+    check.add_argument("--lammps-element", action="append", default=[], metavar="TYPE=ELEMENT")
+    check.set_defaults(_handler=_run_check)
+
+    export = _add_leaf(commands, "export", "convert structures to supported formats")
+    export.add_argument("paths", nargs="+")
+    export.add_argument(
+        "--format", dest="formats", action="append",
+        choices=("poscar", "cif", "lammps-data"),
+    )
+    export.add_argument("--output-root", default="output")
+    export.add_argument("--lammps-element", action="append", default=[], metavar="TYPE=ELEMENT")
+    export.set_defaults(_handler=_run_export)
     _add_leaf(commands, "db", "manage local cache snapshots")
     _add_leaf(commands, "config", "manage non-sensitive configuration")
     return parser
@@ -340,6 +352,131 @@ def _run_generate(args: argparse.Namespace) -> int:
     }
     print(json.dumps(summary, ensure_ascii=False))
     return EXIT_SUCCESS if result.ok else EXIT_PARTIAL
+
+
+def _safe_workspace_path(value: str) -> Path:
+    root = Path.cwd().resolve()
+    path = Path(value).resolve()
+    if not path.is_relative_to(root):
+        raise ValueError(f"path must remain inside the current workspace: {value}")
+    return path
+
+
+def _run_check(args: argparse.Namespace) -> int:
+    from llm_matgen.checks.checker import LightStructureChecker
+    from llm_matgen.generators.models import CheckLevel
+    from llm_matgen.io import readers
+
+    element_map = _parse_lammps_map(args.lammps_element)
+    checker = LightStructureChecker()
+    files = []
+    contains_errors = False
+    for value in args.paths:
+        path = _safe_workspace_path(value)
+        structure = readers.read_structure(
+            path,
+            lammps_element_map=element_map or None,
+        )
+        report = checker.check(structure)
+        warning_count = sum(issue.level is CheckLevel.WARNING for issue in report.issues)
+        error_count = sum(issue.level is CheckLevel.ERROR for issue in report.issues)
+        contains_errors = contains_errors or error_count > 0
+        files.append(
+            {
+                "path": str(path),
+                "warnings": warning_count,
+                "errors": error_count,
+                "issues": [issue.model_dump(mode="json") for issue in report.issues],
+            }
+        )
+    print(json.dumps({"files": files}, ensure_ascii=False))
+    return EXIT_PARTIAL if contains_errors else EXIT_SUCCESS
+
+
+def _run_export(args: argparse.Namespace) -> int:
+    from datetime import datetime, timezone
+    from uuid import uuid4
+
+    from llm_matgen.checks.checker import LightStructureChecker
+    from llm_matgen.generators.models import OutputFormat
+    from llm_matgen.io import readers
+    from llm_matgen.io.exporters import ExportOptions, StructureExporter
+    from llm_matgen.io.manifest import (
+        ManifestArtifact,
+        ManifestStore,
+        ManifestStructure,
+        RunManifest,
+    )
+    from llm_matgen.utils.structure import structure_sha256
+
+    root = Path.cwd().resolve()
+    output_root = Path(args.output_root).resolve()
+    if not output_root.is_relative_to(root):
+        raise ValueError("output root must remain inside the current workspace")
+    run_id = f"export-{uuid4().hex[:12]}"
+    run_dir = output_root / run_id
+    structures_dir = run_dir / "structures"
+    structures_dir.mkdir(parents=True, exist_ok=False)
+    formats = [OutputFormat(value) for value in (args.formats or ["poscar"])]
+    element_map = _parse_lammps_map(args.lammps_element)
+    exporter = StructureExporter()
+    checker = LightStructureChecker()
+    manifest_structures = []
+    manifest_artifacts = []
+    source_hashes = []
+    failures = []
+    for value in args.paths:
+        path = _safe_workspace_path(value)
+        structure = readers.read_structure(path, lammps_element_map=element_map or None)
+        structure_id = structure_sha256(structure)
+        source_hashes.append(structure_id)
+        report = checker.check(structure)
+        manifest_structures.append(
+            ManifestStructure(
+                structure_id=structure_id,
+                parent_structure_id=structure_id,
+                formula=structure.composition.reduced_formula,
+                n_atoms=len(structure),
+                actual_parameters={"source_path": str(path)},
+                check_issues=[issue.model_dump(mode="json") for issue in report.issues],
+            )
+        )
+        if not report.can_export:
+            failures.append(f"{path}: lightweight check contains errors")
+            continue
+        exported = exporter.export_structure(
+            structure,
+            structure_id,
+            ExportOptions(formats=formats, output_dir=structures_dir),
+        )
+        for artifact in exported.artifacts:
+            manifest_artifacts.append(
+                ManifestArtifact(
+                    structure_id=structure_id,
+                    format=artifact.format.value,
+                    path=artifact.path.relative_to(run_dir).as_posix(),
+                    sha256=artifact.sha256,
+                    metadata=artifact.metadata,
+                )
+            )
+    manifest = RunManifest(
+        run_id=run_id,
+        created_at=datetime.now(timezone.utc),
+        software_version="0.1.0",
+        input_source="local-export",
+        parameters={"operation": "export", "source_hashes": source_hashes},
+        structures=manifest_structures,
+        artifacts=manifest_artifacts,
+        warnings=failures,
+    )
+    manifest_path = ManifestStore(output_root).write_atomic(manifest, allow_existing_dir=True)
+    print(
+        json.dumps(
+            {"ok": not failures, "manifest": str(manifest_path), "failures": failures},
+            ensure_ascii=False,
+        )
+    )
+    return EXIT_SUCCESS if not failures else EXIT_PARTIAL
 
 
 def main(argv: list[str] | None = None) -> int:
