@@ -124,4 +124,5 @@ class LocalStore:
 ## 执行状态
 
 - Task 1（数据库连接与 schema 版本）：✅ 已完成
-- Task 2–9：待执行
+- Task 2（MaterialSnapshot 序列化）：✅ 已完成
+- Task 3–9：待执行
