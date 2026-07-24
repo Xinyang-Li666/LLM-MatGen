@@ -185,4 +185,5 @@ class ExecutionLimits(BaseModel):
 - Task 6（重试、速率限制与取消）：✅ 已完成
 - Task 7（确定性结构类别后筛选）：✅ 已完成
 - Task 8（统一生成服务）：✅ 已完成
-- Task 9–13：待执行
+- Task 9（CLI 骨架与帮助）：✅ 已完成
+- Task 10–13：待执行
