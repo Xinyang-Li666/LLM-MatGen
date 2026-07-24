@@ -47,6 +47,7 @@ class Provenance(BaseModel):
     generator_version: str
     input_source: str
     input_structure_hash: str
+    input_structure_hashes: dict[str, str] = Field(default_factory=dict)
     parameters: dict[str, JsonValue]
     seed: int | None
     created_at: datetime
@@ -57,6 +58,7 @@ class StructureRecord(BaseModel):
 
     structure_id: str
     parent_structure_id: str
+    parent_structure_ids: dict[str, str] = Field(default_factory=dict)
     formula: str
     n_atoms: PositiveInt
     actual_parameters: dict[str, JsonValue]

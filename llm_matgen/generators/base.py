@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pymatgen.core import Structure
+
+
+@runtime_checkable
+class BinaryStructureGenerator(Protocol):
+    """Contract for generators that consume two parent structures."""
+
+    def generate(self, inputs: Any, params: Any) -> Any: ...
 
 
 class Supercell(BaseModel):

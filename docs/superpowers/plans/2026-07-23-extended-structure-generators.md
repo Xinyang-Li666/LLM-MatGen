@@ -184,4 +184,5 @@ class DislocationParams(BaseGenerationParams):
 - Task 3（Surface 去重与三格式导出）：✅ 已完成
 - Task 4（GrainBoundary backend 合约）：✅ 已完成
 - Task 5（GrainBoundary 生成器）：✅ 已完成
-- Task 6–12：待执行
+- Task 6（Interface 双父结构契约）：✅ 已完成
+- Task 7–12：待执行
