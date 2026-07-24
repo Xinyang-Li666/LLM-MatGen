@@ -208,7 +208,19 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--lammps-element", action="append", default=[], metavar="TYPE=ELEMENT")
     export.set_defaults(_handler=_run_export)
     _add_leaf(commands, "db", "manage local cache snapshots")
-    _add_leaf(commands, "config", "manage non-sensitive configuration")
+    config = _add_leaf(commands, "config", "manage non-sensitive configuration")
+    config_commands = config.add_subparsers(dest="config_command")
+    set_provider = _add_leaf(config_commands, "set-provider", "set the default provider")
+    set_provider.add_argument("value")
+    set_provider.set_defaults(_handler=_run_config_set, _config_field="provider")
+    set_model = _add_leaf(config_commands, "set-model", "set the default model")
+    set_model.add_argument("value")
+    set_model.set_defaults(_handler=_run_config_set, _config_field="model")
+    show = _add_leaf(config_commands, "show", "show redacted configuration")
+    show.set_defaults(_handler=_run_config_show)
+    set_key = _add_leaf(config_commands, "set-key", "explain secure credential configuration")
+    set_key.add_argument("value")
+    set_key.set_defaults(_handler=_run_config_set_key)
     return parser
 
 
@@ -477,6 +489,27 @@ def _run_export(args: argparse.Namespace) -> int:
         )
     )
     return EXIT_SUCCESS if not failures else EXIT_PARTIAL
+
+
+def _run_config_set(args: argparse.Namespace) -> int:
+    from llm_matgen.config import ConfigManager
+
+    data = ConfigManager().set(args._config_field, args.value)
+    print(json.dumps(data, ensure_ascii=False))
+    return EXIT_SUCCESS
+
+
+def _run_config_show(args: argparse.Namespace) -> int:
+    from llm_matgen.config import ConfigManager
+
+    print(json.dumps(ConfigManager().show(), ensure_ascii=False))
+    return EXIT_SUCCESS
+
+
+def _run_config_set_key(args: argparse.Namespace) -> int:
+    raise ValueError(
+        "credentials cannot be stored in the config file; use an environment variable or system keyring"
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

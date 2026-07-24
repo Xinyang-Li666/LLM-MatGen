@@ -188,4 +188,5 @@ class ExecutionLimits(BaseModel):
 - Task 9（CLI 骨架与帮助）：✅ 已完成
 - Task 10（九类 generate CLI）：✅ 已完成
 - Task 11（check/export CLI）：✅ 已完成
-- Task 12–13：待执行
+- Task 12（安全配置）：✅ 已完成
+- Task 13：待执行
