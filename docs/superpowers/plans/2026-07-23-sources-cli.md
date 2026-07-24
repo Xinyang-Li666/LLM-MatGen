@@ -174,3 +174,8 @@ class ExecutionLimits(BaseModel):
 - CLI 默认检查、默认 POSCAR、可多格式导出。
 - 路径、结构数和原子数限制同时在入口和执行层生效。
 - 密钥不进入配置文件、日志、manifest 或 CLI 回显。
+
+## 执行状态
+
+- Task 1（本地结构来源）：✅ 已完成
+- Task 2–13：待执行
