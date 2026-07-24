@@ -3,10 +3,21 @@
 from __future__ import annotations
 
 import os
+import json
+import re
 from contextlib import nullcontext
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable, Literal, Protocol, TypeVar
 
 from pydantic import BaseModel, ConfigDict, NonNegativeFloat, PositiveInt, model_validator
+from pymatgen.core import Structure
+from pymatgen.io.cif import CifWriter
+
+from llm_matgen.io.readers import StructureReadError, read_structure
+from llm_matgen.sources.models import SourceStructure
+from llm_matgen.utils.structure import structure_sha256
 
 
 class MPError(RuntimeError):
@@ -78,6 +89,19 @@ class MaterialSummary(BaseModel):
     formation_energy_per_atom: float | None = None
     band_gap: float | None = None
     structure: Any | None = None
+
+
+@dataclass
+class MPDownloadFailure:
+    material_id: str
+    error_type: str
+    message: str
+
+
+@dataclass
+class MPDownloadResult:
+    successes: list[SourceStructure] = field(default_factory=list)
+    failures: list[MPDownloadFailure] = field(default_factory=list)
 
 
 def _default_client_factory(api_key: str):
@@ -157,6 +181,147 @@ class MPCollector:
             return results[: query.limit]
 
         return self.execute(collect)
+
+    def download(self, material_ids: list[str], output_dir: Path) -> MPDownloadResult:
+        destination = Path(output_dir).resolve()
+        destination.mkdir(parents=True, exist_ok=True)
+        result = MPDownloadResult()
+        for material_id in material_ids:
+            try:
+                self._validate_material_id(material_id)
+                reusable = self._load_reusable_download(material_id, destination)
+                if reusable is not None:
+                    result.successes.append(reusable)
+                    continue
+                document = self.execute(
+                    lambda client, mid=material_id: self._fetch_download_document(client, mid)
+                )
+                result.successes.append(
+                    self._write_download(material_id, document, destination)
+                )
+            except Exception as exc:
+                mapped = exc if isinstance(exc, MPError) else self._map_error(exc)
+                result.failures.append(
+                    MPDownloadFailure(
+                        material_id=material_id,
+                        error_type=type(mapped).__name__,
+                        message=str(mapped),
+                    )
+                )
+        return result
+
+    @staticmethod
+    def _validate_material_id(material_id: str) -> None:
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", material_id) is None or ".." in material_id:
+            raise MPDataError("invalid Materials Project material ID")
+
+    @staticmethod
+    def _fetch_download_document(client, material_id: str):
+        documents = client.materials.summary.search(
+            material_ids=[material_id],
+            fields=["material_id", "structure", "database_version", "last_updated"],
+            chunk_size=1,
+            num_chunks=1,
+        )
+        documents = list(documents)
+        if len(documents) != 1:
+            raise MPDataError(f"expected one Materials Project structure for {material_id}")
+        return documents[0]
+
+    @staticmethod
+    def _document_value(document, name: str, default=None):
+        return document.get(name, default) if isinstance(document, dict) else getattr(document, name, default)
+
+    def _load_reusable_download(
+        self,
+        material_id: str,
+        destination: Path,
+    ) -> SourceStructure | None:
+        cif_path = destination / f"{material_id}.cif"
+        metadata_path = cif_path.with_suffix(".json")
+        if not cif_path.is_file() or not metadata_path.is_file():
+            return None
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            structure = read_structure(cif_path, fmt="cif")
+            actual_hash = structure_sha256(structure)
+            if metadata.get("structure_hash") != actual_hash:
+                return None
+            retrieved_at = datetime.fromisoformat(metadata["retrieved_at"])
+        except (OSError, ValueError, KeyError, StructureReadError):
+            return None
+        return SourceStructure(
+            artifact_id=material_id,
+            source_kind="materials-project",
+            source_reference=material_id,
+            structure_hash=actual_hash,
+            database_version=metadata.get("database_version"),
+            retrieved_at=retrieved_at,
+            local_path=cif_path,
+            structure=structure,
+        )
+
+    def _write_download(self, material_id: str, document, destination: Path) -> SourceStructure:
+        structure = self._document_value(document, "structure")
+        if not isinstance(structure, Structure):
+            raise MPDataError(f"Materials Project response for {material_id} has no valid structure")
+        response_id = str(self._document_value(document, "material_id", ""))
+        if response_id != material_id:
+            raise MPDataError(f"Materials Project returned {response_id!r} for {material_id}")
+        database_version = self._document_value(document, "database_version")
+        if database_version is None:
+            database_version = self._document_value(document, "last_updated")
+        if database_version is not None:
+            database_version = str(database_version)
+        retrieved_at = datetime.now(timezone.utc)
+        structure_hash = structure_sha256(structure)
+        cif_path = self._next_download_path(destination, material_id)
+        metadata_path = cif_path.with_suffix(".json")
+        cif_temp = cif_path.with_suffix(cif_path.suffix + ".tmp")
+        metadata_temp = metadata_path.with_suffix(metadata_path.suffix + ".tmp")
+        metadata = {
+            "material_id": material_id,
+            "structure_hash": structure_hash,
+            "database_version": database_version,
+            "retrieved_at": retrieved_at.isoformat(),
+        }
+        try:
+            CifWriter(structure).write_file(cif_temp)
+            metadata_temp.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+            os.replace(cif_temp, cif_path)
+            os.replace(metadata_temp, metadata_path)
+        except Exception:
+            cif_temp.unlink(missing_ok=True)
+            metadata_temp.unlink(missing_ok=True)
+            if cif_path.exists() and not metadata_path.exists():
+                cif_path.unlink(missing_ok=True)
+            raise
+        restored = read_structure(cif_path, fmt="cif")
+        restored_hash = structure_sha256(restored)
+        if restored_hash != structure_hash:
+            raise MPDataError("downloaded CIF round-trip changed the structure hash")
+        return SourceStructure(
+            artifact_id=material_id,
+            source_kind="materials-project",
+            source_reference=material_id,
+            structure_hash=restored_hash,
+            database_version=database_version,
+            retrieved_at=retrieved_at,
+            local_path=cif_path,
+            structure=restored,
+        )
+
+    @staticmethod
+    def _next_download_path(destination: Path, material_id: str) -> Path:
+        base = destination / f"{material_id}.cif"
+        if not base.exists() and not base.with_suffix(".json").exists():
+            return base
+        version = 2
+        while True:
+            candidate = destination / f"{material_id}-v{version}.cif"
+            if not candidate.exists() and not candidate.with_suffix(".json").exists():
+                return candidate
+            version += 1
 
     @staticmethod
     def _map_error(exc: Exception) -> MPError:
