@@ -104,6 +104,21 @@ class MPDownloadResult:
     failures: list[MPDownloadFailure] = field(default_factory=list)
 
 
+class PropertyValue(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    value: Any | None = None
+    available: bool
+    endpoint: str
+    method: str | None = None
+    error: str | None = None
+
+
+class MaterialProperties(BaseModel):
+    material_id: str
+    properties: dict[str, PropertyValue]
+
+
 def _default_client_factory(api_key: str):
     from mp_api.client import MPRester
 
@@ -114,6 +129,14 @@ T = TypeVar("T")
 
 
 class MPCollector:
+    PROPERTY_ENDPOINTS = {
+        "thermo": "thermo",
+        "electronic": "electronic_structure",
+        "magnetism": "magnetism",
+        "dielectric": "dielectric",
+        "phonon": "phonon",
+        "elasticity": "elasticity",
+    }
     def __init__(
         self,
         api_key: str | None = None,
@@ -209,6 +232,71 @@ class MPCollector:
                     )
                 )
         return result
+
+    def fetch_properties(
+        self,
+        material_ids: list[str],
+        property_names: list[str],
+    ) -> list[MaterialProperties]:
+        unknown = sorted(set(property_names).difference(self.PROPERTY_ENDPOINTS))
+        if unknown:
+            raise MPDataError(f"unknown Materials Project properties: {', '.join(unknown)}")
+        by_material: dict[str, dict[str, PropertyValue]] = {
+            material_id: {} for material_id in material_ids
+        }
+        for property_name in property_names:
+            endpoint_name = self.PROPERTY_ENDPOINTS[property_name]
+            endpoint_label = f"materials.{endpoint_name}"
+            try:
+                documents = self.execute(
+                    lambda client, name=endpoint_name: list(
+                        getattr(client.materials, name).search(material_ids=material_ids)
+                    )
+                )
+                indexed = {
+                    str(self._document_value(document, "material_id")): document
+                    for document in documents
+                    if self._document_value(document, "material_id") is not None
+                }
+                for material_id in material_ids:
+                    document = indexed.get(material_id)
+                    if document is None:
+                        by_material[material_id][property_name] = PropertyValue(
+                            available=False,
+                            endpoint=endpoint_label,
+                        )
+                        continue
+                    method = self._document_value(document, "method")
+                    by_material[material_id][property_name] = PropertyValue(
+                        value=document,
+                        available=True,
+                        endpoint=endpoint_label,
+                        method=str(method) if method is not None else None,
+                    )
+            except MPError as exc:
+                for material_id in material_ids:
+                    by_material[material_id][property_name] = PropertyValue(
+                        available=False,
+                        endpoint=endpoint_label,
+                        error=str(exc),
+                    )
+        return [
+            MaterialProperties(material_id=material_id, properties=by_material[material_id])
+            for material_id in material_ids
+        ]
+
+    def search_substrates(self, material_ids: list[str]) -> list[Any]:
+        return self._special_query("substrates", material_ids)
+
+    def search_grain_boundaries(self, material_ids: list[str]) -> list[Any]:
+        return self._special_query("grain_boundaries", material_ids)
+
+    def _special_query(self, endpoint_name: str, material_ids: list[str]) -> list[Any]:
+        return self.execute(
+            lambda client: list(
+                getattr(client.materials, endpoint_name).search(material_ids=material_ids)
+            )
+        )
 
     @staticmethod
     def _validate_material_id(material_id: str) -> None:

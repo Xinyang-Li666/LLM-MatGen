@@ -193,3 +193,58 @@ def test_mp_download_preserves_partial_successes(tmp_path: Path):
     assert [item.source_reference for item in result.successes] == ["mp-1"]
     assert [item.material_id for item in result.failures] == ["mp-2"]
     assert result.successes[0].local_path.exists()
+
+
+class PropertyEndpoint:
+    def __init__(self, name, documents):
+        self.name = name
+        self.documents = documents
+        self.calls = []
+
+    def search(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.documents
+
+
+def test_mp_fetch_properties_tracks_endpoint_method_and_unavailable_values():
+    from llm_matgen.sources.mp import MPCollector
+
+    names = ["thermo", "electronic", "magnetism", "dielectric", "phonon", "elasticity"]
+    endpoints = {
+        name: PropertyEndpoint(
+            name,
+            [] if name == "phonon" else [{"material_id": "mp-1", "value": name, "method": "DFT"}],
+        )
+        for name in names
+    }
+    materials = SimpleNamespace(
+        thermo=endpoints["thermo"],
+        electronic_structure=endpoints["electronic"],
+        magnetism=endpoints["magnetism"],
+        dielectric=endpoints["dielectric"],
+        phonon=endpoints["phonon"],
+        elasticity=endpoints["elasticity"],
+    )
+    collector = MPCollector(
+        api_key="key", client_factory=lambda key: SimpleNamespace(materials=materials)
+    )
+    result = collector.fetch_properties(["mp-1"], names)[0]
+    assert result.properties["thermo"].endpoint == "materials.thermo"
+    assert result.properties["thermo"].method == "DFT"
+    assert result.properties["phonon"].available is False
+    assert result.properties["phonon"].value is None
+
+
+def test_mp_special_reference_queries_use_dedicated_endpoints():
+    from llm_matgen.sources.mp import MPCollector
+
+    substrates = PropertyEndpoint("substrates", [{"material_id": "mp-1", "substrate_id": "mp-2"}])
+    grain_boundaries = PropertyEndpoint("grain_boundaries", [{"material_id": "mp-1", "sigma": 5}])
+    materials = SimpleNamespace(substrates=substrates, grain_boundaries=grain_boundaries)
+    collector = MPCollector(
+        api_key="key", client_factory=lambda key: SimpleNamespace(materials=materials)
+    )
+    assert collector.search_substrates(["mp-1"])[0]["substrate_id"] == "mp-2"
+    assert collector.search_grain_boundaries(["mp-1"])[0]["sigma"] == 5
+    assert substrates.calls[0]["material_ids"] == ["mp-1"]
+    assert grain_boundaries.calls[0]["material_ids"] == ["mp-1"]
