@@ -14,6 +14,7 @@ from .doping import DopingGenerator, DopingParams
 from .interstitial import InterstitialGenerator, InterstitialParams
 from .solid_solution import SolidSolutionGenerator, SolidSolutionParams
 from .vacancy import VacancyGenerator, VacancyParams
+from .surface import SurfaceGenerator, SurfaceParams
 
 __all__ = [
     "BaseGenerationParams",
@@ -32,4 +33,6 @@ __all__ = [
     "SolidSolutionParams",
     "VacancyGenerator",
     "VacancyParams",
+    "SurfaceGenerator",
+    "SurfaceParams",
 ]

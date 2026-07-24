@@ -1,5 +1,8 @@
 import pytest
 from pymatgen.core import Lattice, Structure
+from llm_matgen.generators.models import OutputFormat
+from llm_matgen.io.exporters import ExportOptions
+from llm_matgen.pipeline import GenerationPipeline
 
 
 def silicon_structure() -> Structure:
@@ -58,3 +61,43 @@ def test_surface_enforces_atom_limit():
                 max_atoms_per_structure=1,
             ),
         )
+
+
+def test_surface_deduplicates_symmetry_equivalent_cubic_planes():
+    from llm_matgen.generators.surface import SurfaceGenerator, SurfaceParams
+
+    result = SurfaceGenerator().generate(
+        silicon_structure(),
+        SurfaceParams(
+            miller_indices=[(1, 0, 0), (0, 1, 0)],
+            min_slab_size=5.0,
+            min_vacuum_size=5.0,
+        ),
+    )
+    assert result.generated_count == 1
+    assert any("duplicate" in warning for warning in result.warnings)
+
+
+def test_surface_pipeline_exports_all_formats(tmp_path):
+    from llm_matgen.generators.surface import SurfaceGenerator, SurfaceParams
+
+    result = GenerationPipeline(tmp_path).run(
+        SurfaceGenerator(),
+        silicon_structure(),
+        SurfaceParams(
+            miller_indices=[(0, 0, 1)],
+            min_slab_size=5.0,
+            min_vacuum_size=5.0,
+        ),
+        ExportOptions(formats=list(OutputFormat)),
+        run_id="surface",
+    )
+    assert result.ok
+    assert {artifact.format for artifact in result.artifacts} == set(OutputFormat)
+
+
+def test_surface_is_public_generator_api():
+    from llm_matgen.generators import SurfaceGenerator, SurfaceParams
+
+    assert SurfaceGenerator is not None
+    assert SurfaceParams is not None

@@ -7,6 +7,7 @@ import numpy as np
 from pydantic import Field, PositiveFloat, PositiveInt, field_validator
 from pymatgen.core import Structure
 from pymatgen.core.surface import SlabGenerator
+from pymatgen.analysis.structure_matcher import StructureMatcher
 
 from llm_matgen.generators.extended import MillerIndex, normalize_miller
 from llm_matgen.generators.models import (
@@ -43,6 +44,7 @@ class SurfaceGenerator:
         parent_sites = assign_site_ids(source, parent_id)
         generated: list[GeneratedStructure] = []
         warnings: list[str] = []
+        matcher = StructureMatcher(primitive_cell=False, scale=True, attempt_supercell=False)
 
         for miller in params.miller_indices:
             builder = SlabGenerator(
@@ -64,6 +66,11 @@ class SurfaceGenerator:
                         f"surface atom limit exceeded: {len(slab)} > {params.max_atoms_per_structure}"
                     )
                 child_id = structure_sha256(slab)
+                if any(matcher.fit(slab, item.structure) for item in generated):
+                    warnings.append(
+                        f"duplicate surface skipped for Miller index {miller}, termination {termination}"
+                    )
+                    continue
                 frac_z = np.asarray(slab.frac_coords)[:, 2]
                 material_span = float((frac_z.max() - frac_z.min()) * slab.lattice.c)
                 generated.append(
