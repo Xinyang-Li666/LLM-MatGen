@@ -43,6 +43,19 @@ def test_stacking_fault_rejects_zero_slip():
         StackingFaultParams(plane=(0, 0, 1), slip_vector=(0, 0, 0))
 
 
+def test_stacking_fault_enforces_atom_limit():
+    from llm_matgen.generators.stacking_fault import StackingFaultGenerator, StackingFaultParams
+
+    with pytest.raises(ValueError, match="atom limit"):
+        StackingFaultGenerator().generate(
+            fixture_structure(),
+            StackingFaultParams(
+                plane=(0, 0, 1), slip_vector=(0.1, 0, 0),
+                repetitions=(2, 2, 2), max_atoms_per_structure=2,
+            ),
+        )
+
+
 def test_stacking_fault_pipeline_exports_all_formats(tmp_path):
     from llm_matgen.generators.stacking_fault import StackingFaultGenerator, StackingFaultParams
 

@@ -87,6 +87,13 @@ def test_dislocation_params_reject_character_mismatch():
         make_params(burgers_vector=(1.0, 0.0, 0.0))
 
 
+def test_dislocation_enforces_atom_limit():
+    from llm_matgen.generators.dislocation import DislocationGenerator
+
+    with pytest.raises(ValueError, match="atom limit"):
+        DislocationGenerator().generate(fixture_structure(), make_params(max_atoms_per_structure=1))
+
+
 def test_dislocation_pipeline_exports_all_formats(tmp_path):
     from llm_matgen.generators.dislocation import DislocationGenerator
 

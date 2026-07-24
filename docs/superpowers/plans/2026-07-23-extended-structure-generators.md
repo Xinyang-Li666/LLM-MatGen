@@ -190,4 +190,6 @@ class DislocationParams(BaseGenerationParams):
 - Task 9（StackingFault 生成器）：✅ 已完成
 - Task 10（Dislocation 位移场）：✅ 已完成
 - Task 11（Dislocation 结构生成）：✅ 已完成
-- Task 12：待执行
+- Task 12（五类生成器回归与资源限制）：✅ 已完成
+
+验收：78 项测试通过；包级覆盖率 90%；Surface/GrainBoundary/Interface/StackingFault/Dislocation 覆盖率分别为 89%/90%/96%/87%/89%；五类生成器重复运行结构哈希一致。
