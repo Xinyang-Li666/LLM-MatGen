@@ -235,7 +235,25 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--output-root", default="output")
     export.add_argument("--lammps-element", action="append", default=[], metavar="TYPE=ELEMENT")
     export.set_defaults(_handler=_run_export)
-    _add_leaf(commands, "db", "manage local cache snapshots")
+    db = _add_leaf(commands, "db", "manage local cache snapshots")
+    db_commands = db.add_subparsers(dest="db_command")
+    db_import = _add_leaf(db_commands, "import", "import snapshot archive")
+    db_import.add_argument("path"); db_import.add_argument("--database", default="matgen.db")
+    db_import.set_defaults(_handler=_run_db_import)
+    db_export = _add_leaf(db_commands, "export", "export snapshot archive")
+    db_export.add_argument("path"); db_export.add_argument("--database", default="matgen.db")
+    db_export.set_defaults(_handler=_run_db_export)
+    db_query = _add_leaf(db_commands, "query", "query cached snapshots")
+    db_query.add_argument("--database", default="matgen.db"); db_query.add_argument("--element", dest="elements", action="append")
+    db_query.add_argument("--formula-pattern"); db_query.add_argument("--n-elements", type=int); db_query.add_argument("--limit", type=int, default=100); db_query.add_argument("--all-snapshots", action="store_true")
+    db_query.set_defaults(_handler=_run_db_query)
+    db_list = _add_leaf(db_commands, "list", "list cached snapshots")
+    db_list.add_argument("--database", default="matgen.db"); db_list.set_defaults(_handler=_run_db_query, elements=None, formula_pattern=None, n_elements=None, limit=100, all_snapshots=True)
+    db_stats = _add_leaf(db_commands, "stats", "show cache statistics")
+    db_stats.add_argument("--database", default="matgen.db"); db_stats.set_defaults(_handler=_run_db_stats)
+    mcp = _add_leaf(commands, "mcp", "run the Model Context Protocol server")
+    mcp.add_argument("--output-root", default="output")
+    mcp.set_defaults(_handler=_run_mcp)
     config = _add_leaf(commands, "config", "manage non-sensitive configuration")
     config_commands = config.add_subparsers(dest="config_command")
     set_provider = _add_leaf(config_commands, "set-provider", "set the default provider")
@@ -250,6 +268,17 @@ def build_parser() -> argparse.ArgumentParser:
     set_key.add_argument("value")
     set_key.set_defaults(_handler=_run_config_set_key)
     return parser
+
+
+def _run_mcp(args: argparse.Namespace) -> int:
+    try:
+        from llm_matgen.orchestration.tools import default_tool_registry
+    except ImportError as exc:
+        raise ValueError('MCP support is unavailable; install with `pip install "llm-matgen[mcp]"`') from exc
+    from llm_matgen.mcp.server import MCPServer, serve_stdio
+    registry = default_tool_registry(output_root=Path(args.output_root))
+    serve_stdio(MCPServer(registry, args.output_root))
+    return EXIT_SUCCESS
 
 
 def _parse_substituents(values: list[str]) -> dict[str, float]:
@@ -628,6 +657,29 @@ def _run_substrates(args: argparse.Namespace) -> int:
     ]
     print(json.dumps({"results": payload}, ensure_ascii=False, default=str))
     return EXIT_SUCCESS
+
+def _db_store(args):
+    from llm_matgen.database import LocalStore
+    return LocalStore(Path(args.database))
+
+def _run_db_import(args):
+    result = _db_store(args).import_json(Path(args.path))
+    print(json.dumps({"inserted": result.inserted, "existing": result.existing, "failed": result.failed}, ensure_ascii=False)); return EXIT_SUCCESS
+
+def _run_db_export(args):
+    _db_store(args).export_json(Path(args.path)); print(json.dumps({"path": str(args.path)})); return EXIT_SUCCESS
+
+def _run_db_query(args):
+    from llm_matgen.database import LocalMaterialQuery
+    results = _db_store(args).query(LocalMaterialQuery(elements=args.elements, formula_pattern=args.formula_pattern, n_elements=args.n_elements, limit=args.limit, all_snapshots=args.all_snapshots))
+    print(json.dumps({"results": [s.model_dump(mode="json") for s in results]}, ensure_ascii=False)); return EXIT_SUCCESS
+
+def _run_db_stats(args):
+    store = _db_store(args)
+    with store.connect() as conn:
+        count = conn.execute("SELECT COUNT(*) FROM material_snapshots").fetchone()[0]
+        materials = conn.execute("SELECT COUNT(DISTINCT material_id) FROM material_snapshots").fetchone()[0]
+    print(json.dumps({"snapshots": count, "materials": materials})); return EXIT_SUCCESS
 
 
 def main(argv: list[str] | None = None) -> int:
