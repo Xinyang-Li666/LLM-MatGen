@@ -178,4 +178,5 @@ class ExecutionLimits(BaseModel):
 ## 执行状态
 
 - Task 1（本地结构来源）：✅ 已完成
-- Task 2–13：待执行
+- Task 2（MP 客户端边界与错误模型）：✅ 已完成
+- Task 3–13：待执行
