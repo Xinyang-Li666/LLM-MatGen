@@ -182,4 +182,5 @@ class DislocationParams(BaseGenerationParams):
 - Task 1（Miller 指数与资源限制）：✅ 已完成
 - Task 2（Surface 单晶面生成）：✅ 已完成
 - Task 3（Surface 去重与三格式导出）：✅ 已完成
-- Task 4–12：待执行
+- Task 4（GrainBoundary backend 合约）：✅ 已完成
+- Task 5–12：待执行
