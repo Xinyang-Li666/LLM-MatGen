@@ -182,4 +182,5 @@ class ExecutionLimits(BaseModel):
 - Task 3（MP 搜索与分页上限）：✅ 已完成
 - Task 4（MP 下载与 provenance）：✅ 已完成
 - Task 5（MP 性质与特殊查询）：✅ 已完成
-- Task 6–13：待执行
+- Task 6（重试、速率限制与取消）：✅ 已完成
+- Task 7–13：待执行

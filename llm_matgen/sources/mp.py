@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 import json
 import re
+import random
+import time
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -37,6 +39,10 @@ class MPUnavailableError(MPError):
 
 
 class MPDataError(MPError):
+    pass
+
+
+class MPCancelledError(MPError):
     pass
 
 
@@ -142,6 +148,14 @@ class MPCollector:
         api_key: str | None = None,
         *,
         client_factory: MPClientFactory | None = None,
+        max_attempts: int = 3,
+        base_delay: float = 0.5,
+        jitter: float = 0.1,
+        request_interval: float = 0.0,
+        sleep: Callable[[float], None] = time.sleep,
+        monotonic: Callable[[], float] = time.monotonic,
+        random_fn: Callable[[], float] = random.random,
+        cancel_check: Callable[[], bool] | None = None,
     ):
         self._api_key = api_key or os.environ.get("MP_API_KEY")
         if not self._api_key:
@@ -150,17 +164,71 @@ class MPCollector:
             )
         self.client_factory = client_factory or _default_client_factory
         self.max_results = 1000
+        if max_attempts <= 0:
+            raise ValueError("max_attempts must be positive")
+        if min(base_delay, jitter, request_interval) < 0:
+            raise ValueError("retry timing values cannot be negative")
+        self.max_attempts = max_attempts
+        self.base_delay = base_delay
+        self.jitter = jitter
+        self.request_interval = request_interval
+        self._sleep = sleep
+        self._monotonic = monotonic
+        self._random = random_fn
+        self._cancel_check = cancel_check or (lambda: False)
+        self._last_request_started: float | None = None
 
     def execute(self, operation: Callable[[Any], T]) -> T:
+        for attempt in range(1, self.max_attempts + 1):
+            if self._cancel_check():
+                raise MPCancelledError("Materials Project request was cancelled")
+            self._wait_for_request_interval()
+            try:
+                client = self.client_factory(self._api_key)
+                manager = client if hasattr(client, "__enter__") else nullcontext(client)
+                with manager as active_client:
+                    return operation(active_client)
+            except MPCancelledError:
+                raise
+            except Exception as exc:
+                mapped = exc if isinstance(exc, MPError) else self._map_error(exc)
+                retryable = isinstance(mapped, (MPRateLimitError, MPUnavailableError))
+                if not retryable or attempt >= self.max_attempts:
+                    if mapped is exc:
+                        raise
+                    raise mapped from exc
+                if self._cancel_check():
+                    raise MPCancelledError("Materials Project request was cancelled") from exc
+                retry_after = self._retry_after_seconds(exc)
+                delay = (
+                    retry_after
+                    if retry_after is not None
+                    else self.base_delay * (2 ** (attempt - 1)) + self.jitter * self._random()
+                )
+                self._sleep(delay)
+        raise AssertionError("unreachable retry state")
+
+    def _wait_for_request_interval(self) -> None:
+        now = self._monotonic()
+        if self._last_request_started is not None:
+            remaining = self.request_interval - (now - self._last_request_started)
+            if remaining > 0:
+                self._sleep(remaining)
+                now = self._monotonic()
+        self._last_request_started = now
+
+    @staticmethod
+    def _retry_after_seconds(exc: Exception) -> float | None:
+        response = getattr(exc, "response", None)
+        headers = getattr(exc, "headers", None) or getattr(response, "headers", None) or {}
+        value = headers.get("Retry-After") if hasattr(headers, "get") else None
+        if value is None:
+            return None
         try:
-            client = self.client_factory(self._api_key)
-            manager = client if hasattr(client, "__enter__") else nullcontext(client)
-            with manager as active_client:
-                return operation(active_client)
-        except MPError:
-            raise
-        except Exception as exc:
-            raise self._map_error(exc) from exc
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return None
+        return max(0.0, parsed)
 
     def search(self, query: MaterialSearchQuery) -> list[MaterialSummary]:
         if query.limit > self.max_results:

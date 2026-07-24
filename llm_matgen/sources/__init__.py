@@ -5,6 +5,7 @@ from .models import SourceStructure, StructureSource
 from .mp import (
     MPAuthenticationError,
     MPCollector,
+    MPCancelledError,
     MPDataError,
     MPRateLimitError,
     MPUnavailableError,
@@ -17,6 +18,7 @@ __all__ = [
     "StructureSource",
     "MPAuthenticationError",
     "MPCollector",
+    "MPCancelledError",
     "MPDataError",
     "MPRateLimitError",
     "MPUnavailableError",

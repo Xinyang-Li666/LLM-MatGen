@@ -248,3 +248,84 @@ def test_mp_special_reference_queries_use_dedicated_endpoints():
     assert collector.search_grain_boundaries(["mp-1"])[0]["sigma"] == 5
     assert substrates.calls[0]["material_ids"] == ["mp-1"]
     assert grain_boundaries.calls[0]["material_ids"] == ["mp-1"]
+
+
+class FakeClock:
+    def __init__(self):
+        self.now = 0.0
+        self.sleeps = []
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+class FlakyClient:
+    def __init__(self, outcomes):
+        self.outcomes = list(outcomes)
+        self.calls = 0
+
+    def ping(self):
+        outcome = self.outcomes[self.calls]
+        self.calls += 1
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+
+def test_mp_retry_uses_exponential_backoff_for_server_errors():
+    from llm_matgen.sources.mp import MPCollector
+
+    clock = FakeClock()
+    client = FlakyClient([FakeHTTPError(503), FakeHTTPError(503), "ok"])
+    collector = MPCollector(
+        api_key="key", client_factory=lambda key: client,
+        max_attempts=3, base_delay=0.5, jitter=0,
+        sleep=clock.sleep, monotonic=clock.monotonic,
+    )
+    assert collector.execute(lambda active: active.ping()) == "ok"
+    assert clock.sleeps == [0.5, 1.0]
+
+
+def test_mp_retry_respects_retry_after_and_does_not_retry_4xx():
+    from llm_matgen.sources.mp import MPCollector, MPDataError
+
+    rate_error = FakeHTTPError(429)
+    rate_error.headers = {"Retry-After": "2"}
+    clock = FakeClock()
+    rate_client = FlakyClient([rate_error, "ok"])
+    collector = MPCollector(
+        api_key="key", client_factory=lambda key: rate_client,
+        max_attempts=2, jitter=0, sleep=clock.sleep, monotonic=clock.monotonic,
+    )
+    assert collector.execute(lambda active: active.ping()) == "ok"
+    assert clock.sleeps == [2.0]
+
+    bad_client = FlakyClient([FakeHTTPError(400), "should-not-run"])
+    with pytest.raises(MPDataError):
+        MPCollector(
+            api_key="key", client_factory=lambda key: bad_client,
+            max_attempts=3, sleep=clock.sleep, monotonic=clock.monotonic,
+        ).execute(lambda active: active.ping())
+    assert bad_client.calls == 1
+
+
+def test_mp_retry_cancellation_and_exhaustion_preserve_original_cause():
+    from llm_matgen.sources.mp import MPCancelledError, MPCollector, MPUnavailableError
+
+    with pytest.raises(MPCancelledError):
+        MPCollector(
+            api_key="key", client_factory=lambda key: FakeClient(), cancel_check=lambda: True
+        ).execute(lambda active: active.ping())
+
+    original = FakeHTTPError(503)
+    clock = FakeClock()
+    with pytest.raises(MPUnavailableError) as caught:
+        MPCollector(
+            api_key="key", client_factory=lambda key: FlakyClient([original]),
+            max_attempts=1, sleep=clock.sleep, monotonic=clock.monotonic,
+        ).execute(lambda active: active.ping())
+    assert caught.value.__cause__ is original
