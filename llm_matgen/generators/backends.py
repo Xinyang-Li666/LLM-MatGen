@@ -5,8 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+import numpy as np
 from pymatgen.core import Structure
 from pymatgen.core.interface import GrainBoundaryGenerator as PymatgenGBBuilder
+from pymatgen.analysis.interfaces.coherent_interfaces import CoherentInterfaceBuilder
+from pymatgen.analysis.interfaces.zsl import ZSLGenerator
 
 
 class OptionalDependencyError(ImportError):
@@ -73,6 +76,56 @@ class PymatgenGrainBoundaryBackend:
                 "ab_shift": list(ab_shift),
             },
         )
+
+
+class InterfaceMatcherBackend(Protocol):
+    def generate(self, inputs, **kwargs) -> list[BackendStructure]: ...
+
+
+class PymatgenInterfaceMatcherBackend:
+    """Version-isolated adapter around pymatgen ZSL/coherent interfaces."""
+
+    def generate(self, inputs, **kwargs) -> list[BackendStructure]:
+        film_miller = kwargs["film_miller"]
+        substrate_miller = kwargs["substrate_miller"]
+        zsl = ZSLGenerator(
+            max_area_ratio_tol=kwargs["max_area_ratio_tol"],
+            max_area=kwargs["max_area"],
+            max_length_tol=kwargs["max_length_tol"],
+            max_angle_tol=kwargs["max_angle_tol"],
+        )
+        try:
+            builder = CoherentInterfaceBuilder(
+                substrate_structure=inputs.substrate.copy(),
+                film_structure=inputs.film.copy(),
+                film_miller=film_miller,
+                substrate_miller=substrate_miller,
+                zslgen=zsl,
+            )
+            results: list[BackendStructure] = []
+            for termination in builder.terminations:
+                for interface in builder.get_interfaces(
+                    termination=termination,
+                    gap=kwargs["gap"],
+                    vacuum_over_film=kwargs["vacuum_thickness"],
+                    film_thickness=kwargs["film_thickness"],
+                    substrate_thickness=kwargs["substrate_thickness"],
+                    in_layers=False,
+                ):
+                    area = float(np.linalg.norm(np.cross(interface.lattice.matrix[0], interface.lattice.matrix[1])))
+                    results.append(
+                        BackendStructure(
+                            interface,
+                            {
+                                "interface_area": area,
+                                "mismatch": 0.0,
+                                "termination": [str(item) for item in termination],
+                            },
+                        )
+                    )
+            return results
+        except Exception as exc:
+            raise BackendGenerationError(f"interface backend failed: {exc}") from exc
 
 
 class SQSBackend:

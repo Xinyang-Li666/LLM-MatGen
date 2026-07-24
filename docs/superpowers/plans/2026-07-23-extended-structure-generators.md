@@ -185,4 +185,5 @@ class DislocationParams(BaseGenerationParams):
 - Task 4（GrainBoundary backend 合约）：✅ 已完成
 - Task 5（GrainBoundary 生成器）：✅ 已完成
 - Task 6（Interface 双父结构契约）：✅ 已完成
-- Task 7–12：待执行
+- Task 7（ZSL 匹配与 Interface 生成）：✅ 已完成
+- Task 8–12：待执行
