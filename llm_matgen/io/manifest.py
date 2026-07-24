@@ -22,6 +22,7 @@ class ManifestStructure(BaseModel):
 
     structure_id: str
     parent_structure_id: str
+    parent_structure_ids: dict[str, str] = Field(default_factory=dict)
     formula: str
     n_atoms: int
     actual_parameters: dict[str, JsonValue] = Field(default_factory=dict)

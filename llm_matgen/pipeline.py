@@ -48,7 +48,7 @@ class GenerationPipeline:
     def run(
         self,
         generator,
-        structure: Structure,
+        structure,
         params,
         export_options: ExportOptions,
         *,
@@ -67,14 +67,16 @@ class GenerationPipeline:
         manifest_structures: list[ManifestStructure] = []
         manifest_artifacts: list[ManifestArtifact] = []
 
+        reference = structure if isinstance(structure, Structure) else getattr(structure, "substrate", None)
         for generated in generation.generated:
             record = generated.record
-            report = self.checker.check(generated.structure, reference=structure)
+            report = self.checker.check(generated.structure, reference=reference)
             reports[record.structure_id] = report
             manifest_structures.append(
                 ManifestStructure(
                     structure_id=record.structure_id,
                     parent_structure_id=record.parent_structure_id,
+                    parent_structure_ids=record.parent_structure_ids,
                     formula=record.formula,
                     n_atoms=record.n_atoms,
                     actual_parameters=record.actual_parameters,

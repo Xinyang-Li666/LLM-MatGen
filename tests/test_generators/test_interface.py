@@ -1,6 +1,10 @@
 from pymatgen.core import Lattice, Structure
+import json
 
 from llm_matgen.generators.backends import BackendStructure
+from llm_matgen.generators.models import OutputFormat
+from llm_matgen.io.exporters import ExportOptions
+from llm_matgen.pipeline import GenerationPipeline
 
 
 def film_structure() -> Structure:
@@ -70,3 +74,28 @@ def test_interface_enforces_atom_limit():
             InterfaceInput(film=film_structure(), substrate=substrate_structure()),
             make_params(max_atoms_per_structure=1),
         )
+
+
+def test_interface_pipeline_exports_formats_and_named_parent_manifest(tmp_path):
+    from llm_matgen.generators.interface import InterfaceGenerator, InterfaceInput
+
+    inputs = InterfaceInput(film=film_structure(), substrate=substrate_structure())
+    result = GenerationPipeline(tmp_path).run(
+        InterfaceGenerator(backend=FakeInterfaceBackend()),
+        inputs,
+        make_params(max_structures=1),
+        ExportOptions(formats=list(OutputFormat)),
+        run_id="interface",
+    )
+    assert result.ok
+    assert {artifact.format for artifact in result.artifacts} == set(OutputFormat)
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["structures"][0]["parent_structure_ids"].keys() == {"film", "substrate"}
+
+
+def test_interface_is_public_generator_api():
+    from llm_matgen.generators import InterfaceGenerator, InterfaceInput, InterfaceParams
+
+    assert InterfaceGenerator is not None
+    assert InterfaceInput is not None
+    assert InterfaceParams is not None
