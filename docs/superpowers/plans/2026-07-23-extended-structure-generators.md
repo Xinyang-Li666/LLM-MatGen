@@ -189,4 +189,5 @@ class DislocationParams(BaseGenerationParams):
 - Task 8（Interface 三格式与 manifest）：✅ 已完成
 - Task 9（StackingFault 生成器）：✅ 已完成
 - Task 10（Dislocation 位移场）：✅ 已完成
-- Task 11–12：待执行
+- Task 11（Dislocation 结构生成）：✅ 已完成
+- Task 12：待执行
