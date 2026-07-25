@@ -446,6 +446,9 @@ def _rate_limit(min_interval=0.3):
 | 8 | `StackingFaultGenerator` | `stacking_fault` | 层错（刚性位移） | DS-Gen |
 | 9 | `DislocationGenerator` | `dislocation` | 位错（各向同性弹性） | DS-Gen |
 
+位错生成流程固定为“方向解析 → 晶胞定向 → 横向扩胞 → 对完整超胞施加位移 → 原子数守恒检查”。
+`line_direction` 和 `slip_plane` 按输入晶格解释，`burgers_vector` 使用 Cartesian Å；`radius` 只用于确定横向边界，不用于删原子。
+
 #### 3.2.3 `BaseGenerator` 重构
 
 ```python

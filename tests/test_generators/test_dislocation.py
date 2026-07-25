@@ -54,6 +54,16 @@ def fixture_structure() -> Structure:
     return Structure(Lattice.cubic(4.0), ["Al"], [[0, 0, 0]])
 
 
+def nb_bcc_fixture() -> Structure:
+    """Conventional BCC Nb cell used for the non-[001] regression case."""
+    return Structure.from_spacegroup(
+        "Im-3m",
+        Lattice.cubic(3.317632378768019),
+        ["Nb"],
+        [[0, 0, 0]],
+    )
+
+
 def make_params(**updates):
     from llm_matgen.generators.dislocation import DislocationParams
 
@@ -82,9 +92,58 @@ def test_dislocation_generator_builds_and_displaces_cylindrical_supercell():
     assert np.isfinite(child.structure.cart_coords).all()
 
 
-def test_dislocation_params_reject_character_mismatch():
-    with pytest.raises(ValidationError, match="screw"):
-        make_params(burgers_vector=(1.0, 0.0, 0.0))
+def test_nb_111_screw_does_not_drop_supercell_atoms():
+    from llm_matgen.generators.dislocation import DislocationGenerator
+
+    source = nb_bcc_fixture()
+    a_half = source.lattice.a / 2
+    result = DislocationGenerator().generate(
+        source,
+        make_params(
+            line_direction=(1, 1, 1),
+            burgers_vector=(a_half, a_half, a_half),
+            slip_plane=(1, -1, 0),
+            radius=15.0,
+        ),
+    )
+    child = result.generated[0]
+
+    # A 10x10x1 expansion of the 2-site conventional cell has 200 sites.
+    # The corrected oriented construction may use a larger commensurate cell,
+    # but it must never return fewer sites than the un-oriented expansion.
+    assert child.structure.num_sites >= 200
+    assert child.record.actual_parameters["pre_displacement_atom_count"] == child.structure.num_sites
+
+
+def test_nb_111_screw_line_is_aligned_with_periodic_axis():
+    from llm_matgen.generators.dislocation import DislocationGenerator
+
+    source = nb_bcc_fixture()
+    a_half = source.lattice.a / 2
+    result = DislocationGenerator().generate(
+        source,
+        make_params(
+            line_direction=(1, 1, 1),
+            burgers_vector=(a_half, a_half, a_half),
+            slip_plane=(1, -1, 0),
+            radius=15.0,
+        ),
+    )
+    child = result.generated[0]
+    periodic_axis = child.structure.lattice.matrix[2]
+    periodic_axis = periodic_axis / np.linalg.norm(periodic_axis)
+    expected = np.array([0.0, 0.0, 1.0])
+    assert np.linalg.norm(np.cross(periodic_axis, expected)) < 1e-6
+    assert child.record.actual_parameters["orientation_matrix"][2] == [1, 1, 1]
+
+
+def test_dislocation_generator_rejects_character_mismatch():
+    from llm_matgen.generators.dislocation import DislocationGenerator
+
+    with pytest.raises(ValueError, match="Burgers vector"):
+        DislocationGenerator().generate(
+            fixture_structure(), make_params(burgers_vector=(1.0, 0.0, 0.0))
+        )
 
 
 def test_dislocation_enforces_atom_limit():

@@ -7,7 +7,7 @@ from typing import Literal
 
 import numpy as np
 from pydantic import Field, PositiveFloat, field_validator, model_validator
-from pymatgen.core import Structure
+from pymatgen.core import Lattice, Structure
 
 from llm_matgen.generators.extended import MillerIndex, normalize_miller
 from llm_matgen.generators.models import (
@@ -96,14 +96,6 @@ class DislocationParams(BaseGenerationParams):
             raise ValueError("Burgers vector must be finite and non-zero")
         if not np.isclose(np.dot(line, plane), 0):
             raise ValueError("line direction must lie in the slip plane")
-        parallel = np.linalg.norm(np.cross(burgers, line)) <= 1e-8
-        perpendicular = abs(float(np.dot(burgers, line))) <= 1e-8
-        if self.character == "screw" and not parallel:
-            raise ValueError("screw Burgers vector must be parallel to line direction")
-        if self.character == "edge" and not perpendicular:
-            raise ValueError("edge Burgers vector must be perpendicular to line direction")
-        if self.character == "mixed" and (parallel or perpendicular):
-            raise ValueError("mixed Burgers vector needs edge and screw components")
         if not all(0 <= value <= 1 for value in self.core_position):
             raise ValueError("core position must use fractional in-plane coordinates in [0, 1]")
         return self
@@ -113,58 +105,124 @@ class DislocationGenerator:
     defect_name = "dislocation"
     generator_version = "0.1.0"
 
+    @staticmethod
+    def _orient_structure(
+        structure: Structure,
+        line_direction: MillerIndex,
+        slip_plane: MillerIndex,
+    ) -> tuple[Structure, np.ndarray, np.ndarray]:
+        """Build a commensurate cell with the dislocation line along z.
+
+        The integer transform is applied before any radius expansion.  A
+        rigid Cartesian rotation then makes the transformed line the z axis;
+        this preserves the exact atom count while giving the displacement
+        field a well-defined local frame.
+        """
+        line = np.asarray(line_direction, dtype=int)
+        plane = np.asarray(slip_plane, dtype=int)
+        transverse = np.cross(plane, line)
+        if not np.any(transverse):
+            raise ValueError("line direction and slip-plane normal do not define a local frame")
+        transform = np.vstack([transverse, plane, line])
+        determinant = round(float(np.linalg.det(transform)))
+        if determinant == 0:
+            raise ValueError("dislocation orientation matrix is singular")
+
+        oriented = structure.copy()
+        oriented.make_supercell(transform)
+        lattice_matrix = oriented.lattice.matrix.copy()
+        line_axis = lattice_matrix[2]
+        e3 = line_axis / np.linalg.norm(line_axis)
+        plane_normal = plane.astype(float) @ structure.lattice.reciprocal_lattice.matrix
+        plane_normal = plane_normal - np.dot(plane_normal, e3) * e3
+        if np.linalg.norm(plane_normal) <= 1e-10:
+            raise ValueError("line direction and slip-plane normal do not define a local frame")
+        e2 = plane_normal / np.linalg.norm(plane_normal)
+        e1 = np.cross(e2, e3)
+        e1 /= np.linalg.norm(e1)
+        basis = np.vstack([e1, e2, e3])
+
+        rotated_lattice = Lattice(lattice_matrix @ basis.T)
+        rotated_coords = np.asarray(oriented.cart_coords) @ basis.T
+        rotated = Structure(
+            rotated_lattice,
+            [site.specie for site in oriented],
+            rotated_coords,
+            coords_are_cartesian=True,
+            to_unit_cell=True,
+        )
+        return rotated, basis, transform
+
     def generate(self, structure: Structure, params: DislocationParams) -> GenerationResult:
         source = structure.copy()
         parent_id = structure_sha256(source)
         parent_sites = assign_site_ids(source, parent_id)
+        line_cart = np.asarray(params.line_direction, dtype=float) @ source.lattice.matrix
+        line_norm = np.linalg.norm(line_cart)
+        if line_norm <= 1e-10:
+            raise ValueError("line direction has zero Cartesian length")
+        line_unit = line_cart / line_norm
+        plane_normal = np.asarray(params.slip_plane, dtype=float) @ source.lattice.reciprocal_lattice.matrix
+        plane_norm = np.linalg.norm(plane_normal)
+        if plane_norm <= 1e-10:
+            raise ValueError("slip-plane normal has zero Cartesian length")
+        plane_unit = plane_normal / plane_norm
+        burgers = np.asarray(params.burgers_vector, dtype=float)
+        parallel = np.linalg.norm(np.cross(burgers, line_unit)) <= 1e-8
+        perpendicular = abs(float(np.dot(burgers, line_unit))) <= 1e-8
+        in_plane = abs(float(np.dot(burgers, plane_unit))) <= 1e-8
+        if not in_plane:
+            raise ValueError("Burgers vector must lie in the slip plane")
+        if params.character == "screw" and not parallel:
+            raise ValueError("screw Burgers vector must be parallel to line direction")
+        if params.character == "edge" and not perpendicular:
+            raise ValueError("edge Burgers vector must be perpendicular to line direction")
+        if params.character == "mixed" and (parallel or perpendicular):
+            raise ValueError("mixed Burgers vector needs edge and screw components")
+
+        oriented, basis, transform = self._orient_structure(
+            source, params.line_direction, params.slip_plane
+        )
+        transverse_widths = []
+        for vector in oriented.lattice.matrix[:2]:
+            projected = vector - np.dot(vector, oriented.lattice.matrix[2] / np.linalg.norm(oriented.lattice.matrix[2])) * (
+                oriented.lattice.matrix[2] / np.linalg.norm(oriented.lattice.matrix[2])
+            )
+            transverse_widths.append(float(np.linalg.norm(projected)))
         repeats = (
-            max(1, int(np.ceil(2 * params.radius / source.lattice.a))),
-            max(1, int(np.ceil(2 * params.radius / source.lattice.b))),
+            max(1, int(np.ceil(2 * params.radius / transverse_widths[0]))),
+            max(1, int(np.ceil(2 * params.radius / transverse_widths[1]))),
             1,
         )
-        expanded = source.copy()
+        expanded = oriented.copy()
         expanded.make_supercell(np.diag(repeats))
         if len(expanded) > params.max_atoms_per_structure:
             raise ValueError(
                 f"dislocation atom limit exceeded: {len(expanded)} > {params.max_atoms_per_structure}"
             )
 
-        line_cart = np.asarray(params.line_direction) @ expanded.lattice.matrix
-        e3 = line_cart / np.linalg.norm(line_cart)
-        plane_normal = np.asarray(params.slip_plane) @ expanded.lattice.reciprocal_lattice.matrix
-        plane_normal /= np.linalg.norm(plane_normal)
-        e1 = np.cross(plane_normal, e3)
-        if np.linalg.norm(e1) <= 1e-10:
-            raise ValueError("line direction and slip-plane normal do not define a local frame")
-        e1 /= np.linalg.norm(e1)
-        e2 = np.cross(e3, e1)
-        basis = np.vstack([e1, e2, e3])
-
         core_cart = (
             params.core_position[0] * expanded.lattice.matrix[0]
             + params.core_position[1] * expanded.lattice.matrix[1]
         )
-        relative_cart = np.asarray(expanded.cart_coords) - core_cart
-        local_points = relative_cart @ basis.T
-        keep = np.linalg.norm(local_points[:, :2], axis=1) <= params.radius
-        if not keep.any():
-            raise ValueError("dislocation radius leaves an empty structure")
+        local_points = np.asarray(expanded.cart_coords) - core_cart
         local_burgers = np.asarray(params.burgers_vector) @ basis.T
         local_displacements = isotropic_displacement_field(
-            local_points[keep],
+            local_points,
             tuple(float(value) for value in local_burgers),
             params.character,
             params.poisson_ratio,
             core_cutoff=max(1e-6, min(source.lattice.abc) * 1e-4),
         )
-        displaced_cart = np.asarray(expanded.cart_coords)[keep] + local_displacements @ basis
-        species = [site.specie for site, selected in zip(expanded, keep, strict=True) if selected]
+        displaced_cart = np.asarray(expanded.cart_coords) + local_displacements
+        if len(displaced_cart) != len(expanded):
+            raise RuntimeError("dislocation displacement changed the atom count")
         child = Structure(
             expanded.lattice,
-            species,
+            [site.specie for site in expanded],
             displaced_cart,
             coords_are_cartesian=True,
-            to_unit_cell=False,
+            to_unit_cell=True,
         )
         child_id = structure_sha256(child)
         return GenerationResult(
@@ -187,6 +245,9 @@ class DislocationGenerator:
                             "radius_angstrom": float(params.radius),
                             "poisson_ratio": params.poisson_ratio,
                             "supercell_repetitions": list(repeats),
+                            "orientation_matrix": transform.tolist(),
+                            "pre_displacement_atom_count": len(expanded),
+                            "minimum_boundary_distance_angstrom": min(transverse_widths[i] * repeats[i] / 2 for i in range(2)),
                             "boundary_conditions": ["non-periodic", "non-periodic", "periodic"],
                         },
                         site_mapping={site_id: None for site_id in parent_sites},
