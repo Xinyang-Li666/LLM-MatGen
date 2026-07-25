@@ -1,17 +1,558 @@
-# LLM-MatGen 用户手册（位错生成约定）
+# LLM-MatGen 中文用户手册
 
-本文补充位错生成器的参数语义。生成结果仍需用户自行进行弛豫、边界条件选择和发表质量评估。
+LLM-MatGen 用于生成材料晶体结构，提供命令行、Python 和 MCP 接口，覆盖九类结构生成器。程序默认执行轻量检查，并可导出 POSCAR、CIF 和 LAMMPS data。
 
-## 位错参数
+本项目只负责结构生成与基础几何检查。用户需要自行完成结构弛豫、能量与稳定性计算，并判断结构是否适合实验、工程应用或学术发表。
 
-- `line_direction`：相对于输入晶格的 Miller 方向，例如 `[1, 1, 1]`。
-- `slip_plane`：相对于输入晶格的 Miller 面，例如 `(1, -1, 0)`。
-- `burgers_vector`：Cartesian 坐标中的 Burgers 矢量，单位为 Å；不是 Miller 指数。
-- `character`：`screw`、`edge` 或 `mixed`。
-- `core_position`：定向后横截面两个晶格方向的分数坐标。
-- `radius`：位错芯到横向边界的最小目标距离。它决定横向扩胞大小，不会用圆柱掩码删除外圈原子。
-- `poisson_ratio`：各向同性弹性位移场使用的 Poisson 比。
+## 1. 安装
 
-生成流程为：先将晶胞定向，使位错线成为第三个周期轴；再沿两个横向方向扩胞；最后对完整超胞施加位移场。生成器会检查位移前后原子数和元素计数保持一致。
+### 1.1 环境要求
 
-位错结构采用理想化各向同性弹性场，不代表已经完成结构弛豫或消除了周期边界条件下的物理不相容；这些工作由用户负责。
+- Python 3.10 或更高版本
+- Windows、Linux 或 macOS
+- Materials Project 搜索和下载需要网络及用户自己的 MP API Key
+
+### 1.2 安装核心功能
+
+```bash
+git clone <your-repository-url>
+cd LLM-MatGen
+python -m pip install -e .
+```
+
+可选功能：
+
+```bash
+# MCP 服务
+python -m pip install -e ".[mcp]"
+
+# SQS 固溶体
+python -m pip install -e ".[sqs]"
+
+# 开发与测试
+python -m pip install -e ".[dev]"
+```
+
+验证安装：
+
+```bash
+llm-matgen --help
+llm-matgen generate --help
+```
+
+如果终端找不到 `llm-matgen`，使用模块形式：
+
+```bash
+python -m llm_matgen --help
+```
+
+## 2. 输入、输出与通用参数
+
+### 2.1 输入格式
+
+程序根据文件名自动识别：
+
+- `POSCAR`、`.vasp`、`.poscar`
+- `.cif`
+- `.data`、`.lammps`
+
+读取 LAMMPS data 时，显式元素映射优先；缺少全部或部分映射时，程序会提示警告并将未映射的 type ID 按元素原子序数自动映射。例如：
+
+```bash
+llm-matgen check structure.data --lammps-element 1=Fe --lammps-element 2=C
+```
+
+当前 LAMMPS data 读取器支持正交盒以及 `atomic`、`charge` atom style。
+
+### 2.2 通用生成参数
+
+所有生成器都支持：
+
+- `--format poscar|cif|lammps-data`：输出格式；可重复提供以同时导出多种格式。
+- `--output-root PATH`：运行结果根目录，默认 `output`。
+- `--max-structures N`：本次生成的最大结构数，默认 1000。
+- `--max-atoms N`：单个结构最大原子数，默认 100000。
+- `--lammps-element TYPE=ELEMENT`：覆盖 LAMMPS type 到元素的映射；缺失的 type ID 自动按原子序数解释。
+
+示例：
+
+```bash
+llm-matgen generate vacancy \
+  --input path/to/si.cif \
+  --target-element Si \
+  --count 1 \
+  --seed 7 \
+  --format poscar \
+  --format cif \
+  --output-root output
+```
+
+### 2.3 输出目录
+
+一次生成对应一个独立运行目录：
+
+```text
+output/
+└── run-xxxxxxxxxxxx/
+    ├── manifest.json
+    └── structures/
+        ├── <structure-id>.vasp
+        └── <structure-id>.cif
+```
+
+`manifest.json` 记录：
+
+- 输入来源和软件版本
+- 请求参数与实际离散参数
+- 结构 ID、原子数和组成
+- 随机种子
+- 轻量检查结果
+- 输出文件相对路径与 SHA-256
+- 责任边界声明
+
+同一目录中已有同名运行或 manifest 时，程序不会静默覆盖。
+
+## 3. 九类生成器
+
+参数中的三维整数或浮点矢量均使用逗号分隔，例如 `1,1,1`；二维坐标写作 `0.5,0.5`。
+
+### 3.1 空位 `vacancy`
+
+从指定元素位点删除一个或多个原子。可按数量或浓度生成，二者不能同时使用。
+
+主要参数：
+
+- `--target-element ELEMENT`：需要移除的元素，可重复。
+- `--count N`：空位数，可重复。
+- `--concentration VALUE`：空位比例，接受 `0.05` 或 `5%`。
+- `--variants N`：每个空位数生成的构型数量。
+- `--seed N`：随机种子。
+
+```bash
+llm-matgen generate vacancy \
+  --input path/to/si.cif \
+  --target-element Si \
+  --count 1 \
+  --variants 2 \
+  --seed 7
+```
+
+### 3.2 间隙原子 `interstitial`
+
+在 Voronoi 候选位点或随机候选位置插入元素。
+
+主要参数：
+
+- `--element ELEMENT`：插入元素，可重复。
+- `--count N`：插入数量，可重复。
+- `--candidate-mode voronoi|random`：候选点生成方式。
+- `--min-distance Å`：新原子与已有原子的最小距离。
+- `--variants N`：每个数量生成的构型数。
+- `--seed N`：随机种子。
+
+```bash
+llm-matgen generate interstitial \
+  --input path/to/si.cif \
+  --element Li \
+  --count 1 \
+  --candidate-mode voronoi \
+  --min-distance 1.0 \
+  --seed 7
+```
+
+如果候选位点不足，程序可能少于请求数量或返回明确错误；应检查 manifest 中的实际参数和警告。
+
+### 3.3 取代掺杂 `doping`
+
+用掺杂元素替换目标元素。
+
+主要参数：
+
+- `--dopant-element ELEMENT`：掺杂元素，可重复。
+- `--target-element ELEMENT`：被替换元素，可重复。
+- `--count N`：替换数量，可重复。
+- `--variants N`：每组组合生成的构型数。
+- `--allow-repeated-dopant`：允许同一掺杂元素重复参与组合。
+- `--seed N`：随机种子。
+
+```bash
+llm-matgen generate doping \
+  --input path/to/al.cif \
+  --target-element Al \
+  --dopant-element Mg \
+  --count 2 \
+  --variants 3 \
+  --seed 7
+```
+
+### 3.4 固溶体 `solid-solution`
+
+按比例将目标元素替换为一种或多种组元。
+
+主要参数：
+
+- `--target-element ELEMENT`：基体中被替换的元素。
+- `--substituent ELEMENT=RATIO`：替代元素及比例，可重复。
+- `--method random|sqs`：随机替换或 SQS。
+- `--variants N`：生成构型数。
+- `--seed N`：随机种子。
+
+```bash
+llm-matgen generate solid-solution \
+  --input path/to/ni.cif \
+  --target-element Ni \
+  --substituent Co=0.2 \
+  --method random \
+  --variants 2 \
+  --seed 7
+```
+
+有限原子数会使请求比例离散化，实际比例以 manifest 为准。`sqs` 需要安装 `.[sqs]`。
+
+### 3.5 表面 `surface`
+
+按 Miller 面生成具有指定厚度和真空层的 slab。
+
+主要参数：
+
+- `--miller H,K,L`：表面 Miller 指数，可重复。
+- `--slab-size Å`：slab 最小厚度。
+- `--vacuum-size Å`：真空层最小厚度。
+- `--no-center`：不将 slab 居中。
+- `--conventional`：先转换为标准常规晶胞。
+
+```bash
+llm-matgen generate surface \
+  --input path/to/si.cif \
+  --miller 1,1,1 \
+  --slab-size 12 \
+  --vacuum-size 15 \
+  --conventional \
+  --format poscar
+```
+
+不同终止面可能生成多个结构，并受 `--max-structures` 限制。
+
+### 3.6 晶界 `grain-boundary`
+
+按旋转轴、角度及可选晶界面生成晶界。
+
+主要参数：
+
+- `--rotation-axis U,V,W`：旋转轴。
+- `--angle DEGREE`：旋转角度，可重复。
+- `--plane H,K,L`：可选晶界面。
+- `--expand-times N`：晶界方向扩展次数。
+- `--vacuum-thickness Å`：可选真空厚度。
+- `--ab-shift X,Y`：两个面内方向的相对平移。
+
+```bash
+llm-matgen generate grain-boundary \
+  --input path/to/cu.cif \
+  --rotation-axis 0,0,1 \
+  --angle 90 \
+  --expand-times 4 \
+  --ab-shift 0,0
+```
+
+角度和晶格对称性可能导致无法构造有限 CSL 晶胞；此时应调整角度、晶面或原子数上限。
+
+### 3.7 界面 `interface`
+
+匹配薄膜和基底表面并构造共格候选界面。该生成器需要两个输入文件。
+
+主要参数：
+
+- `--film PATH`、`--substrate PATH`：薄膜和基底结构。
+- `--film-miller H,K,L`、`--substrate-miller H,K,L`：两个表面，可重复。
+- `--film-thickness Å`、`--substrate-thickness Å`：两侧厚度。
+- `--vacuum-thickness Å`：界面结构真空厚度。
+- `--gap Å`：薄膜与基底间距。
+- `--max-area Å²`：匹配超胞最大面积。
+- `--max-area-ratio-tol`、`--max-length-tol`、`--max-angle-tol`：匹配容差。
+
+```bash
+llm-matgen generate interface \
+  --film path/to/film.cif \
+  --substrate path/to/substrate.cif \
+  --film-miller 1,0,0 \
+  --substrate-miller 1,0,0 \
+  --film-thickness 12 \
+  --substrate-thickness 15 \
+  --vacuum-thickness 15 \
+  --gap 2 \
+  --max-area 300
+```
+
+面积或失配容差过严时可能没有候选结果；放宽参数前应先确认材料和晶面选择合理。
+
+### 3.8 层错 `stacking-fault`
+
+在指定平面位置对晶体一侧施加刚性位移。
+
+主要参数：
+
+- `--plane H,K,L`：层错面。
+- `--slip-vector X,Y,Z`：滑移矢量。
+- `--fault-position VALUE`：沿法向的分数位置，默认 0.5。
+- `--repetitions A,B,C`：扩胞倍率。
+- `--vacuum-thickness Å`：可选真空厚度。
+
+```bash
+llm-matgen generate stacking-fault \
+  --input path/to/al.cif \
+  --plane 1,1,1 \
+  --slip-vector 0.5,0,0 \
+  --fault-position 0.5 \
+  --repetitions 2,2,1
+```
+
+滑移矢量的物理意义取决于输入晶格和所选滑移系，用户需要自行核对。
+
+### 3.9 位错 `dislocation`
+
+使用各向同性弹性位移场生成 edge、screw 或 mixed 位错。
+
+主要参数：
+
+- `--line-direction U,V,W`：相对于输入晶格的位错线方向。
+- `--burgers-vector X,Y,Z`：Cartesian Burgers 矢量，单位 Å，不是 Miller 指数。
+- `--slip-plane H,K,L`：滑移面。
+- `--character edge|screw|mixed`：位错类型。
+- `--core-position X,Y`：定向后横截面的分数位置。
+- `--radius Å`：位错芯到横向边界的最小目标距离。
+- `--poisson-ratio VALUE`：Poisson 比。
+
+下面给出一个几何自洽的立方晶格 edge 位错示例：
+
+```bash
+llm-matgen generate dislocation \
+  --input path/to/cubic.cif \
+  --line-direction 0,0,1 \
+  --burgers-vector 0,2.5,0 \
+  --slip-plane 1,0,0 \
+  --character edge \
+  --core-position 0.5,0.5 \
+  --radius 20 \
+  --poisson-ratio 0.3 \
+  --format poscar \
+  --format lammps-data
+```
+
+生成器先定向晶胞，使位错线成为第三个周期轴，再沿两个横向方向扩胞，并对完整超胞施加位移。`radius` 不会通过圆柱掩码删除外圈原子。
+
+输入 primitive 和 conventional 晶胞时 Miller 指数的含义可能不同。指定常见滑移系前，应确认输入晶格基底与所用指数约定一致。
+
+## 4. 轻量检查
+
+```bash
+llm-matgen check structure.vasp
+llm-matgen check a.cif b.vasp
+```
+
+检查内容包括：
+
+- 是否为空结构
+- 晶格是否有限且体积为正
+- 分数坐标是否有限
+- 是否存在小于默认阈值的近距离原子
+
+`warning` 表示需要人工复核，但不一定阻止导出；`error` 表示存在明显格式或几何问题。轻量检查不进行结构弛豫、能量、声子或稳定性计算。
+
+## 5. 格式转换
+
+```bash
+llm-matgen export structure.vasp --format cif --output-root converted
+llm-matgen export structure.cif --format poscar --format lammps-data --output-root converted
+```
+
+导出后程序会重新读取文件，检查原子数和组成是否保持一致。
+
+LAMMPS data 注意事项：
+
+- 当前导出器要求正交晶格。
+- 输出包含盒尺寸、原子、类型和质量。
+- 输出不包含势函数、键参数、计算设置或经过验证的电荷。
+- 再次读取时可用 `--lammps-element TYPE=ELEMENT` 覆盖类型映射；未覆盖的 type ID 按原子序数解释。
+
+## 6. Materials Project
+
+### 6.1 API Key
+
+只通过环境变量提供真实密钥，不要写进代码、脚本、文档或 Git 提交。
+
+Linux/macOS：
+
+```bash
+export MP_API_KEY="your-mp-api-key"
+```
+
+Windows PowerShell：
+
+```powershell
+$env:MP_API_KEY = "your-mp-api-key"
+```
+
+`.env.example` 只包含虚假占位符。
+
+### 6.2 搜索
+
+```bash
+llm-matgen search --formula Si --limit 10
+llm-matgen search --element Li --element O --n-elements 3 --band-gap-min 1.0
+llm-matgen search --chemsys Li-Co-O --structure-class layered
+```
+
+可用结构分类包括 `layered`、`perovskite`、`spinel`、`rocksalt` 和 `fluorite`。分类属于轻量几何筛选，应结合材料来源人工复核。
+
+### 6.3 下载
+
+```bash
+llm-matgen download mp-149 --output-dir downloads
+llm-matgen download mp-149 mp-13 --output-dir downloads
+```
+
+下载目录包含 CIF 和 metadata JSON。已有且哈希匹配的文件会被复用；冲突文件不会被静默覆盖。
+
+### 6.4 性质与基底
+
+```bash
+llm-matgen properties mp-149 --property electronic
+llm-matgen properties mp-149 --property elasticity
+llm-matgen substrates mp-149
+```
+
+### MP 性质字段
+
+可请求六类性质。返回值是对应 Materials Project endpoint 的文档，具体字段可能随服务版本变化。
+
+| CLI 类型 | 典型内容 |
+| --- | --- |
+| `thermo` | `energy_per_atom`、`formation_energy_per_atom`、`energy_above_hull`、`is_stable`、`decomposes_to`、`thermo_type` |
+| `electronic` | `band_gap`、`cbm`、`vbm`、`efermi`、`is_gap_direct`、`is_metal`、`bandstructure`、`dos` |
+| `magnetism` | `ordering`、`is_magnetic`、`num_magnetic_sites`、`types_of_magnetic_species`、`magmoms`、`total_magnetization` |
+| `dielectric` | `total`、`ionic`、`electronic`、`e_total`、`e_ionic`、`e_electronic`、`n` |
+| `phonon` | `phonon_bandstructure`、`phonon_dos`、`force_constants`、`born`、`epsilon_static`、`thermal_displacement_data` |
+| `elasticity` | `elastic_tensor`、`compliance_tensor`、`bulk_modulus`、`shear_modulus`、`young_modulus`、`homogeneous_poisson`、`universal_anisotropy`、`debye_temperature` |
+
+每个性质结果还包含 `value`、`available`、`endpoint`、`method` 和 `error`。`available=false` 表示数据缺失或查询失败，不应解释为数值零。
+
+### 基底搜索
+
+当前命令根据 MP material ID 所代表的结构记录搜索基底候选：
+
+```bash
+llm-matgen substrates mp-149
+```
+
+典型结果字段包括 `film_id`、`sub_id`、`sub_form`、`film_orient`、`orient`、`area`、`energy` 和 `norients`。这里的“根据结构搜索”是根据 MP 中该 material ID 对应的结构及取向匹配记录查询；当前 CLI 不直接将本地 CIF/POSCAR 上传到基底 endpoint。
+
+获得候选后，可下载薄膜和基底，再用 `generate interface` 指定 Miller 面、厚度、gap 和失配容差构造实际界面。基底候选不等同于已弛豫或已验证的界面结构。
+
+性质类型包括 `thermo`、`electronic`、`magnetism`、`dielectric`、`phonon` 和 `elasticity`。Materials Project 未提供某项数据时，不应将缺失值解释为零。
+
+## 7. MCP 与自然语言客户端
+
+安装并启动：
+
+```bash
+python -m pip install -e ".[mcp]"
+llm-matgen mcp --output-root output
+```
+
+MCP 客户端负责管理模型和模型凭据，并将自然语言请求转为 LLM-MatGen 工具调用。项目本身不绑定特定模型服务。
+
+MCP 资源只能读取已登记在 manifest 中且位于输出根目录内的文件，不能通过相对路径跳出输出目录。
+
+自然语言示例见 [自然语言工作流](examples/natural-language-workflows.md)，接口细节见 [MCP 文档](mcp.md)。
+
+## 8. 本地数据库
+
+本地快照数据库支持：
+
+```bash
+llm-matgen db import --help
+llm-matgen db export --help
+llm-matgen db query --help
+llm-matgen db list --help
+llm-matgen db stats --help
+```
+
+在执行导入、导出或查询前，使用相应的 `--help` 核对数据库路径和过滤参数。公开发布时不要提交本地数据库文件。
+
+## 9. 常见问题
+
+### 找不到命令
+
+确认当前 Python 环境已经安装项目：
+
+```bash
+python -m pip show llm-matgen
+python -m llm_matgen --help
+```
+
+### 输入文件无法识别
+
+检查扩展名是否为 `.vasp`、`.poscar`、`.cif`、`.data` 或 `.lammps`。无扩展名的 VASP 文件应命名为 `POSCAR`。
+
+### LAMMPS data 缺少元素映射
+
+LAMMPS 类型编号通常只是任意编号。未提供映射时程序会继续执行并按原子序数解释，同时发出警告：
+
+```text
+type 6  -> C
+type 26 -> Fe
+```
+
+如果 type ID 并非元素原子序数，请显式覆盖：
+
+```bash
+llm-matgen check structure.data --lammps-element 1=Fe --lammps-element 2=C
+```
+
+部分映射也会继续执行：显式映射优先，其余 type 使用原子序数。type 小于 1 或超过元素周期表范围时会报错。
+
+### 生成结构太多或原子太多
+
+降低候选数量、扩胞尺寸或 `--max-structures`，并检查 `--max-atoms`。不要仅为了绕过限制而设置无法处理的超大上限。
+
+### 结果只有警告
+
+查看 manifest 中的 `check_issues`。近距离原子警告通常意味着需要进一步检查或弛豫，不等同于程序崩溃。
+
+### MP 请求失败
+
+检查：
+
+1. `MP_API_KEY` 是否已设置；
+2. 网络是否可访问 Materials Project；
+3. material ID 和查询字段是否有效；
+4. API Key 是否仍有效。
+
+不要在报错截图或 issue 中粘贴真实密钥。
+
+## 10. 安全与发布边界
+
+不要提交：
+
+- 真实 API Key 或本地凭据
+- `.env` 和个人配置
+- Materials Project 下载缓存
+- `output/`、`test-results/` 等生成结果
+- 本地 SQLite 数据库
+- 包含个人绝对路径的日志或脚本
+
+如果密钥曾经出现在聊天、终端输出、文件或提交历史中，应先撤销并轮换，再进行公开发布。
+
+## 11. 责任声明
+
+LLM-MatGen 生成的是计算工作流输入候选，不是经过验证的材料结论。项目不保证：
+
+- 热力学或动力学稳定性
+- 实验可合成性
+- 势函数或 DFT 设置适用性
+- 结构弛豫收敛
+- 计算结果正确性
+- 论文发表质量
+
+所有下游计算、验证和科研判断均由用户负责。
