@@ -122,3 +122,19 @@ def test_sqs_integration_generates_structure_when_backend_is_installed():
     assert result.generated_count == 1
     assert len(result.generated[0].structure) == len(structure)
     assert result.generated[0].record.actual_parameters["method"] == "sqs"
+
+    repeat = SolidSolutionGenerator().generate(
+        structure,
+        SolidSolutionParams(
+            target_element="Co",
+            substituents={"Ni": 0.5, "Mn": 0.5},
+            method="sqs",
+            sqs_iterations=10,
+            seed=7,
+        ),
+    )
+    from llm_matgen.utils.structure import structure_sha256
+
+    assert structure_sha256(result.generated[0].structure) == structure_sha256(
+        repeat.generated[0].structure
+    )
