@@ -9,3 +9,14 @@ dist/
 *.egg-info/
 .venv/
 output/
+downloads/
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite
+*.sqlite3
+test-results/
+tests/nl-tests/mp-downloads/
+tests/nl-tests/output/
+tests/nl-tests/*-result.json
