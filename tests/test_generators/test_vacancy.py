@@ -53,3 +53,13 @@ def test_vacancy_seed_is_reproducible():
     assert [
         structure_sha256(item.structure) for item in first.generated
     ] == [structure_sha256(item.structure) for item in second.generated]
+
+
+def test_vacancy_requires_count_or_concentration():
+    from llm_matgen.generators.vacancy import VacancyGenerator, VacancyParams
+
+    with pytest.raises(ValueError, match="counts or concentration"):
+        VacancyGenerator().generate(
+            fixture_structure(),
+            VacancyParams(target_elements=["Co"]),
+        )

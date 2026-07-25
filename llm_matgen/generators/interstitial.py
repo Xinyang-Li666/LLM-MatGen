@@ -32,10 +32,17 @@ class InterstitialParams(RandomGenerationParams):
 
 
 def _minimum_distance(structure: Structure, frac_coords: np.ndarray) -> float:
-    cart_coords = structure.lattice.get_cartesian_coords(frac_coords)
-    return min(
-        structure.lattice.get_distance_and_image(site.coords, cart_coords)[0]
-        for site in structure
+    """Return the minimum distance from *frac_coords* to any site under PBC.
+
+    Uses explicit fractional coordinates with
+    :meth:`~pymatgen.core.Lattice.get_distance_and_image` to avoid the
+    Cartesian auto-detection ambiguity in the underlying lattice helpers.
+    """
+    return float(
+        min(
+            structure.lattice.get_distance_and_image(site.frac_coords, frac_coords)[0]
+            for site in structure
+        )
     )
 
 
@@ -89,10 +96,7 @@ def _find_random_candidates(
         if _minimum_distance(structure, candidate) < min_distance:
             continue
         if all(
-            structure.lattice.get_distance_and_image(
-                structure.lattice.get_cartesian_coords(existing),
-                structure.lattice.get_cartesian_coords(candidate),
-            )[0]
+            structure.lattice.get_distance_and_image(existing, candidate)[0]
             >= min_distance
             for existing in candidates
         ):

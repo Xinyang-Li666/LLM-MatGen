@@ -43,10 +43,12 @@ class VacancyGenerator:
         if not target_indices:
             raise ValueError("target elements are not present in the input structure")
 
-        counts = list(params.counts or [])
-        if not counts:
-            assert params.concentration is not None
+        if params.counts:
+            counts = list(params.counts)
+        elif params.concentration is not None:
             counts = [max(1, round(len(target_indices) * params.concentration))]
+        else:
+            raise ValueError("either counts or concentration must be provided")
         if any(count > len(target_indices) for count in counts):
             raise ValueError("vacancy count exceeds available target sites")
         resolved_seed = params.seed
