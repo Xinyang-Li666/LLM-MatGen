@@ -8,8 +8,18 @@ def test_cli_exposes_documented_top_level_commands():
     choices = parser._subparsers._group_actions[0].choices
     assert set(choices) == {
         "search", "download", "properties", "substrates", "generate",
-        "check", "export", "db", "config",
+        "check", "export", "db", "mcp", "config",
     }
+
+
+def test_mcp_help_is_available_without_starting_server(capsys):
+    from llm_matgen.__main__ import build_parser
+
+    parser = build_parser()
+    with pytest.raises(SystemExit) as caught:
+        parser.parse_args(["mcp", "--help"])
+    assert caught.value.code == 0
+    assert "output-root" in capsys.readouterr().out
 
 
 def test_generate_help_exposes_all_nine_generators(capsys):

@@ -192,6 +192,40 @@ def test_mp_download_writes_atomic_structure_metadata_and_reuses_matching_file(t
     assert endpoint.calls == ["mp-1"]
 
 
+def test_mp_download_uses_current_database_ids_field(tmp_path: Path):
+    from llm_matgen.sources.mp import MPCollector
+
+    endpoint = DownloadEndpoint(
+        {"mp-1": {"material_id": "mp-1", "structure": mp_structure(), "database_IDs": {"icsd": ["icsd-1"]}}}
+    )
+    client = SimpleNamespace(materials=SimpleNamespace(summary=endpoint))
+    result = MPCollector(api_key="key", client_factory=lambda key: client).download(["mp-1"], tmp_path)
+    assert not result.failures
+    assert result.successes[0].database_version == "{'icsd': ['icsd-1']}"
+
+
+def test_mp_download_falls_back_to_last_updated(tmp_path: Path):
+    from llm_matgen.sources.mp import MPCollector
+
+    endpoint = DownloadEndpoint(
+        {"mp-1": {"material_id": "mp-1", "structure": mp_structure(), "last_updated": "2026-07-25T00:00:00Z"}}
+    )
+    client = SimpleNamespace(materials=SimpleNamespace(summary=endpoint))
+    result = MPCollector(api_key="key", client_factory=lambda key: client).download(["mp-1"], tmp_path)
+    assert result.successes[0].database_version == "2026-07-25T00:00:00Z"
+
+
+def test_mp_download_prefers_legacy_database_version(tmp_path: Path):
+    from llm_matgen.sources.mp import MPCollector
+
+    endpoint = DownloadEndpoint(
+        {"mp-1": {"material_id": "mp-1", "structure": mp_structure(), "database_version": "legacy", "database_IDs": {"icsd": ["icsd-1"]}}}
+    )
+    client = SimpleNamespace(materials=SimpleNamespace(summary=endpoint))
+    result = MPCollector(api_key="key", client_factory=lambda key: client).download(["mp-1"], tmp_path)
+    assert result.successes[0].database_version == "legacy"
+
+
 def test_mp_download_uses_new_version_path_when_existing_metadata_mismatches(tmp_path: Path):
     from llm_matgen.sources.mp import MPCollector
 

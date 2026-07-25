@@ -405,7 +405,7 @@ class MPCollector:
     def _fetch_download_document(client, material_id: str):
         documents = client.materials.summary.search(
             material_ids=[material_id],
-            fields=["material_id", "structure", "database_version", "last_updated"],
+            fields=["material_id", "structure", "database_IDs", "last_updated"],
             chunk_size=1,
             num_chunks=1,
         )
@@ -417,6 +417,15 @@ class MPCollector:
     @staticmethod
     def _document_value(document, name: str, default=None):
         return document.get(name, default) if isinstance(document, dict) else getattr(document, name, default)
+
+    @classmethod
+    def _document_database_version(cls, document) -> str | None:
+        """Read version metadata from old and current MP response schemas."""
+        for field in ("database_version", "database_IDs", "last_updated"):
+            value = cls._document_value(document, field)
+            if value is not None:
+                return str(value)
+        return None
 
     def _load_reusable_download(
         self,
@@ -454,11 +463,7 @@ class MPCollector:
         response_id = str(self._document_value(document, "material_id", ""))
         if response_id != material_id:
             raise MPDataError(f"Materials Project returned {response_id!r} for {material_id}")
-        database_version = self._document_value(document, "database_version")
-        if database_version is None:
-            database_version = self._document_value(document, "last_updated")
-        if database_version is not None:
-            database_version = str(database_version)
+        database_version = self._document_database_version(document)
         retrieved_at = datetime.now(timezone.utc)
         structure_hash = structure_sha256(structure)
         cif_path = self._next_download_path(destination, material_id)
@@ -485,7 +490,13 @@ class MPCollector:
         restored = read_structure(cif_path, fmt="cif")
         restored_hash = structure_sha256(restored)
         if restored_hash != structure_hash:
-            raise MPDataError("downloaded CIF round-trip changed the structure hash")
+            # High-symmetry structures (e.g. R-3m) can produce different site
+            # ordering / symmetry-equivalent positions after CIF round-trip.
+            # Fall back to pymatgen's StructureMatcher for structural equivalence.
+            from pymatgen.analysis.structure_matcher import StructureMatcher
+            if not StructureMatcher().fit(structure, restored):
+                raise MPDataError("downloaded CIF round-trip changed the structure hash "
+                                  "and structures are not equivalent")
         return SourceStructure(
             artifact_id=material_id,
             source_kind="materials-project",
