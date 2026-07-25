@@ -46,6 +46,23 @@ llm-matgen generate --help
 python -m llm_matgen --help
 ```
 
+### 1.3 命令总览
+
+| 命令 | 用途 |
+| --- | --- |
+| `llm-matgen search` | 搜索 Materials Project 结构 |
+| `llm-matgen download` | 下载 Materials Project 结构 |
+| `llm-matgen properties` | 查询 Materials Project 性质 |
+| `llm-matgen substrates` | 查询与薄膜结构匹配的基底候选 |
+| `llm-matgen generate` | 使用九类生成器构造结构 |
+| `llm-matgen check` | 对结构执行轻量检查 |
+| `llm-matgen export` | 转换结构文件格式 |
+| `llm-matgen db` | 导入、导出或查询本地快照 |
+| `llm-matgen mcp` | 启动 MCP 服务 |
+| `llm-matgen config` | 管理非敏感的本地配置 |
+
+运行 `llm-matgen <命令> --help` 查看子命令参数。`config` 不用于保存 API Key；密钥应通过环境变量或外部客户端提供。
+
 ## 2. 输入、输出与通用参数
 
 ### 2.1 输入格式
@@ -69,7 +86,7 @@ llm-matgen check structure.data --lammps-element 1=Fe --lammps-element 2=C
 所有生成器都支持：
 
 - `--format poscar|cif|lammps-data`：输出格式；可重复提供以同时导出多种格式。
-- `--output-root PATH`：运行结果根目录，默认 `output`。
+- `--output-root PATH`：运行结果根目录，默认 `output`。`--output-root` 必须位于当前工作目录内部，不能用绝对路径或 `..` 跳出工作区。
 - `--max-structures N`：本次生成的最大结构数，默认 1000。
 - `--max-atoms N`：单个结构最大原子数，默认 100000。
 - `--lammps-element TYPE=ELEMENT`：覆盖 LAMMPS type 到元素的映射；缺失的 type ID 自动按原子序数解释。

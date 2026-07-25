@@ -67,6 +67,23 @@ llm-matgen generate --help
 python -m llm_matgen --help
 ```
 
+## 命令索引
+
+| 命令 | 用途 |
+| --- | --- |
+| `llm-matgen search` | 搜索 Materials Project 结构 |
+| `llm-matgen download` | 下载 Materials Project 结构 |
+| `llm-matgen properties` | 查询材料性质 |
+| `llm-matgen substrates` | 查询薄膜结构对应的基底候选 |
+| `llm-matgen generate` | 使用九类生成器构造结构 |
+| `llm-matgen check` | 执行轻量结构检查 |
+| `llm-matgen export` | 转换 POSCAR、CIF 或 LAMMPS data |
+| `llm-matgen db` | 管理本地数据库快照 |
+| `llm-matgen mcp` | 启动 MCP 服务 |
+| `llm-matgen config` | 管理非敏感的本地配置 |
+
+使用 `llm-matgen <命令> --help` 查看对应参数。API Key 应通过环境变量或外部客户端管理，不写入本地配置。
+
 ## 五分钟快速开始
 
 准备一个包含 Si 的 CIF 文件，并将下面的 `path/to/si.cif` 替换为实际路径。该命令生成一个 Si 空位并写出 POSCAR：
