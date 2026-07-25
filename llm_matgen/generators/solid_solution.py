@@ -74,7 +74,10 @@ class SolidSolutionGenerator:
                     max_atoms=params.max_atoms_per_structure,
                 )
             except (OptionalDependencyError, BackendGenerationError) as exc:
-                raise type(exc)(f"{exc}; use --method random to continue") from exc
+                message = str(exc)
+                if "--method random" not in message:
+                    message = f"{message}; use --method random to continue"
+                raise type(exc)(message) from exc
         parent_id = structure_sha256(source)
         parent_site_ids = assign_site_ids(source, parent_id)
         target_indices = [

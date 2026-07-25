@@ -75,8 +75,9 @@ def test_sqs_failure_suggests_random(monkeypatch):
         method="sqs",
         seed=7,
     )
-    with pytest.raises(backends.BackendGenerationError, match="method random"):
+    with pytest.raises(backends.BackendGenerationError, match="method random") as error:
         SolidSolutionGenerator().generate(fixture_structure(), params)
+    assert str(error.value).count("--method random") == 1
 
 
 def test_sqs_config_preserves_seed_and_composition():
