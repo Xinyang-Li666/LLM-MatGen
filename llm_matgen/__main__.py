@@ -127,6 +127,7 @@ def _configure_generators(generators) -> None:
     solid.add_argument("--substituent", action="append", required=True, metavar="ELEMENT=RATIO")
     solid.add_argument("--method", choices=("random", "sqs"), default="random")
     solid.add_argument("--variants", type=int, default=1)
+    solid.add_argument("--sqs-iterations", type=int, default=50_000)
     solid.add_argument("--seed", type=int)
 
     surface = _add_leaf(generators, "surface", "generate surface slabs")
@@ -343,7 +344,8 @@ def build_generation_request(args: argparse.Namespace):
         parameters = {
             "target_element": args.target_element,
             "substituents": _parse_substituents(args.substituent),
-            "method": args.method, "variants": args.variants, "seed": args.seed,
+            "method": args.method, "variants": args.variants,
+            "sqs_iterations": args.sqs_iterations, "seed": args.seed,
         }
     elif name == "surface":
         parameters = {

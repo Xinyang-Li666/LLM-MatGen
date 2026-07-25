@@ -44,6 +44,20 @@ def test_generate_parses_percent_seed_and_defaults_to_poscar(tmp_path: Path, mon
     assert [item.value for item in request.export_options.formats] == ["poscar"]
 
 
+def test_solid_solution_exposes_sqs_iterations(tmp_path: Path, monkeypatch):
+    from llm_matgen.__main__ import build_generation_request, build_parser
+
+    monkeypatch.chdir(tmp_path)
+    args = build_parser().parse_args([
+        "generate", "solid-solution", "--input", "in.cif",
+        "--target-element", "Co", "--substituent", "Ni=1",
+        "--method", "sqs", "--sqs-iterations", "10",
+    ])
+    request = build_generation_request(args)
+
+    assert request.parameters["sqs_iterations"] == 10
+
+
 def test_generate_rejects_output_root_escape(tmp_path: Path, monkeypatch):
     from llm_matgen.__main__ import build_generation_request, build_parser
 

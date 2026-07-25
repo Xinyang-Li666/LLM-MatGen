@@ -9,7 +9,11 @@ from pydantic import Field, PositiveInt, model_validator
 from pymatgen.core import Structure
 
 from llm_matgen.generators.base import Supercell, apply_supercell
-from llm_matgen.generators.backends import SQSBackend
+from llm_matgen.generators.backends import (
+    BackendGenerationError,
+    OptionalDependencyError,
+    SQSBackend,
+)
 from llm_matgen.generators.models import (
     GeneratedStructure,
     GenerationResult,
@@ -25,12 +29,13 @@ class SolidSolutionParams(RandomGenerationParams):
     substituents: dict[str, float] = Field(min_length=1)
     method: str = "random"
     variants: PositiveInt = 1
+    sqs_iterations: PositiveInt = 50_000
     supercell: Supercell | tuple[tuple[int, int, int], tuple[int, int, int], tuple[int, int, int]] | None = None
 
     @model_validator(mode="after")
     def validate_ratios(self):
         if self.method not in {"random", "sqs"}:
-            raise ValueError("unsupported solid solution method")
+            raise ValueError(f"unsupported solid solution method: {self.method!r}")
         if any(value <= 0 for value in self.substituents.values()):
             raise ValueError("substituent ratios must be positive")
         if not np.isclose(sum(self.substituents.values()), 1.0):
@@ -57,12 +62,19 @@ class SolidSolutionGenerator:
             else structure.copy()
         )
         if params.method == "sqs":
-            return SQSBackend().generate(
-                source,
-                params.target_element,
-                params.substituents,
-                params.seed,
-            )
+            try:
+                return SQSBackend().generate(
+                    source,
+                    params.target_element,
+                    params.substituents,
+                    params.seed,
+                    iterations=params.sqs_iterations,
+                    variants=params.variants,
+                    max_structures=params.max_structures,
+                    max_atoms=params.max_atoms_per_structure,
+                )
+            except (OptionalDependencyError, BackendGenerationError) as exc:
+                raise type(exc)(f"{exc}; use --method random to continue") from exc
         parent_id = structure_sha256(source)
         parent_site_ids = assign_site_ids(source, parent_id)
         target_indices = [
