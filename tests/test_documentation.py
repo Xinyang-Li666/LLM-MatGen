@@ -72,3 +72,16 @@ def test_public_markdown_relative_links_exist():
 def test_user_guide_documents_output_root_workspace_boundary():
     guide = (ROOT / "docs/user-guide.zh-CN.md").read_text(encoding="utf-8")
     assert "`--output-root` 必须位于当前工作目录内部" in guide
+
+
+def test_public_docs_document_sqs_failure_and_random_fallback():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    guide = (ROOT / "docs/user-guide.zh-CN.md").read_text(encoding="utf-8")
+    for text in (readme, guide):
+        assert "--sqs-iterations" in text
+        assert "--method random" in text
+
+
+def test_design_doc_does_not_advertise_missing_ask_command():
+    design = (ROOT / "docs/llm-matgen-design.md").read_text(encoding="utf-8")
+    assert "llm-matgen ask" not in design

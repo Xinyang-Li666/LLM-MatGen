@@ -142,6 +142,8 @@ llm-matgen download mp-149 --output-dir downloads
 
 `.env.example` 只提供变量名和虚假占位符。真实密钥、下载缓存和生成结果不应进入公开仓库。
 
+固溶体支持随机替换和可选 SQS。SQS 需要额外安装 `.[sqs]`，并可用 `--sqs-iterations N` 控制优化迭代次数。SQS 依赖缺失或优化失败时，命令会给出原因并建议使用 `--method random` 继续生成；不会静默回退。
+
 ## 任意客户端与 MCP
 
 安装 MCP 可选依赖后启动服务：

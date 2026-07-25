@@ -211,6 +211,7 @@ llm-matgen generate doping \
 - `--target-element ELEMENT`：基体中被替换的元素。
 - `--substituent ELEMENT=RATIO`：替代元素及比例，可重复。
 - `--method random|sqs`：随机替换或 SQS。
+- `--sqs-iterations N`：SQS 优化迭代次数，默认 50000。
 - `--variants N`：生成构型数。
 - `--seed N`：随机种子。
 
@@ -224,7 +225,7 @@ llm-matgen generate solid-solution \
   --seed 7
 ```
 
-有限原子数会使请求比例离散化，实际比例以 manifest 为准。`sqs` 需要安装 `.[sqs]`。
+有限原子数会使请求比例离散化，实际比例以 manifest 为准。`sqs` 需要安装 `.[sqs]`。如果 SQS 依赖缺失或优化失败，程序会报告原因并建议使用 `--method random`；不会静默回退为随机结构。
 
 ### 3.5 表面 `surface`
 

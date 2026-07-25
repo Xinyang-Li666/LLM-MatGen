@@ -856,9 +856,7 @@ class StructureExporter:
 
 ```
 llm-matgen
-├── ask <自然语言任务>     可选内置 Provider 的自然语言模式
-├── chat                   交互式对话模式
-├── mcp                    启动 MCP Server
+├── mcp                    启动 MCP Server，供外部 LLM 客户端调用
 │
 ├── search [选项]          搜索 MP 材料
 ├── download <ids...>      下载结构文件
@@ -897,11 +895,8 @@ API Key 不通过 CLI 明文落盘。MP 与模型厂商密钥从环境变量或�
 ### 4.2 使用示例
 
 ```bash
-# LLM Agent 模式（主要使用方式）
-llm-matgen ask "从MP搜索LiCoO2，生成5% Co空位和Mn掺杂，默认检查，同时输出POSCAR和CIF"
-
-# 交互式对话
-llm-matgen chat
+# 自然语言模式由外部 LLM 客户端通过 MCP 工具编排
+llm-matgen mcp --output-root output
 
 # 直接搜索
 llm-matgen search --elements Li Co O --band-gap-min 2.0 --limit 50
