@@ -88,7 +88,7 @@ def _add_common_generate_args(parser: argparse.ArgumentParser, *, binary: bool =
         action="append",
         default=[],
         metavar="TYPE=ELEMENT",
-        help="element mapping needed when the input is LAMMPS data",
+        help="override LAMMPS type mapping; missing types default to atomic numbers",
     )
     parser.set_defaults(_handler=_run_generate)
 
@@ -223,7 +223,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     check = _add_leaf(commands, "check", "run lightweight structure checks")
     check.add_argument("paths", nargs="+")
-    check.add_argument("--lammps-element", action="append", default=[], metavar="TYPE=ELEMENT")
+    check.add_argument(
+        "--lammps-element", action="append", default=[], metavar="TYPE=ELEMENT",
+        help="override LAMMPS type mapping; missing types default to atomic numbers",
+    )
     check.set_defaults(_handler=_run_check)
 
     export = _add_leaf(commands, "export", "convert structures to supported formats")
@@ -233,7 +236,10 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("poscar", "cif", "lammps-data"),
     )
     export.add_argument("--output-root", default="output")
-    export.add_argument("--lammps-element", action="append", default=[], metavar="TYPE=ELEMENT")
+    export.add_argument(
+        "--lammps-element", action="append", default=[], metavar="TYPE=ELEMENT",
+        help="override LAMMPS type mapping; missing types default to atomic numbers",
+    )
     export.set_defaults(_handler=_run_export)
     db = _add_leaf(commands, "db", "manage local cache snapshots")
     db_commands = db.add_subparsers(dest="db_command")

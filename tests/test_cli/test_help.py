@@ -22,6 +22,18 @@ def test_mcp_help_is_available_without_starting_server(capsys):
     assert "output-root" in capsys.readouterr().out
 
 
+def test_lammps_mapping_help_documents_atomic_number_fallback(capsys):
+    from llm_matgen.__main__ import build_parser
+
+    parser = build_parser()
+    with pytest.raises(SystemExit) as caught:
+        parser.parse_args(["check", "--help"])
+    assert caught.value.code == 0
+    output = " ".join(capsys.readouterr().out.split())
+    assert "default to" in output
+    assert "atomic numbers" in output
+
+
 def test_generate_help_exposes_all_nine_generators(capsys):
     from llm_matgen.__main__ import build_parser
 

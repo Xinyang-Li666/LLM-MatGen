@@ -46,3 +46,26 @@ def test_export_cli_writes_multiple_formats_and_manifest(tmp_path: Path, monkeyp
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert {item["format"] for item in manifest["artifacts"]} == {"poscar", "cif", "lammps-data"}
     assert manifest["parameters"]["source_hashes"]
+
+
+def test_check_cli_continues_with_atomic_number_lammps_fallback(tmp_path: Path, monkeypatch, capsys):
+    from llm_matgen.__main__ import main
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "input.data").write_text(
+        """1 atoms
+1 atom types
+0.0 2.0 xlo xhi
+0.0 2.0 ylo yhi
+0.0 2.0 zlo zhi
+
+Atoms # atomic
+
+1 6 0.0 0.0 0.0
+""",
+        encoding="utf-8",
+    )
+    assert main(["check", "input.data"]) == 0
+    report = json.loads(capsys.readouterr().out)["files"][0]
+    assert report["warnings"] == 0
+    assert report["errors"] == 0

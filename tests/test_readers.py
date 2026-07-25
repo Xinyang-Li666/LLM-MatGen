@@ -26,8 +26,8 @@ def test_read_poscar_and_cif_with_explicit_or_detected_format(tmp_path: Path):
     assert read_structure(poscar, fmt="poscar").num_sites == source.num_sites
 
 
-def test_read_lammps_data_requires_or_uses_element_mapping(tmp_path: Path):
-    from llm_matgen.io.readers import StructureReadError, read_structure
+def test_read_lammps_data_infers_atomic_numbers_without_mapping(tmp_path: Path):
+    from llm_matgen.io.readers import read_structure
 
     data = tmp_path / "fixture.data"
     data.write_text(
@@ -45,21 +45,70 @@ Masses
 
 Atoms # charge
 
-1 1 0.0 0.0 0.0 0.0
-2 2 0.0 2.1 2.1 2.1
+1 6 0.0 0.0 0.0 0.0
+2 27 0.0 2.1 2.1 2.1
 """,
         encoding="utf-8",
     )
 
-    with pytest.raises(StructureReadError, match="element"):
-        read_structure(data)
+    with pytest.warns(UserWarning, match="atomic-number") as caught:
+        inferred = read_structure(data)
+    assert len(caught) == 1
+    assert inferred.composition.reduced_formula == "CoC"
 
     restored = read_structure(
         data,
-        lammps_element_map={1: "Li", 2: "Co"},
+        lammps_element_map={6: "Li", 27: "Co"},
     )
     assert restored.num_sites == 2
     assert restored.composition.reduced_formula == "LiCo"
+
+
+def test_lammps_data_partial_mapping_prefers_explicit_values(tmp_path: Path):
+    from llm_matgen.io.readers import read_structure
+
+    data = tmp_path / "partial.data"
+    data.write_text(
+        """2 atoms
+2 atom types
+
+0.0 4.2 xlo xhi
+0.0 4.2 ylo yhi
+0.0 4.2 zlo zhi
+
+Atoms # atomic
+
+1 1 0.0 0.0 0.0
+2 6 2.1 2.1 2.1
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.warns(UserWarning, match="6=C"):
+        restored = read_structure(data, lammps_element_map={1: "Fe"})
+    assert restored.composition.reduced_formula == "FeC"
+
+
+@pytest.mark.parametrize("type_id", [0, -1, 119])
+def test_lammps_data_rejects_invalid_atomic_number_fallback(tmp_path: Path, type_id: int):
+    from llm_matgen.io.readers import StructureReadError, read_structure
+
+    data = tmp_path / f"invalid-{type_id}.data"
+    data.write_text(
+        f"""1 atoms
+1 atom types
+0.0 1.0 xlo xhi
+0.0 1.0 ylo yhi
+0.0 1.0 zlo zhi
+
+Atoms # atomic
+
+1 {type_id} 0.0 0.0 0.0
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(StructureReadError, match="atomic number"):
+        read_structure(data)
 
 
 def test_readers_reject_unknown_extension_and_corrupt_content(tmp_path: Path):
@@ -115,5 +164,6 @@ Atoms # charge
 """,
         encoding="utf-8",
     )
-    with pytest.raises(StructureReadError, match="mapping"):
-        read_structure(missing_type, lammps_element_map={1: "Li"})
+    with pytest.warns(UserWarning, match="2=He"):
+        restored = read_structure(missing_type, lammps_element_map={1: "Li"})
+    assert restored.composition.reduced_formula == "He"

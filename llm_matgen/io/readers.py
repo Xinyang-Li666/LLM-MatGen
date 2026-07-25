@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import re
+import warnings
 from pathlib import Path
 
 from pymatgen.core import Lattice, Structure
+from pymatgen.core.periodic_table import Element
 
 
 class StructureReadError(ValueError):
@@ -49,9 +51,6 @@ def _read_lammps_data(
 
     if atom_count is None or len(bounds) != 3 or atom_section is None:
         raise StructureReadError("LAMMPS data is missing atoms or orthogonal box headers")
-    if not lammps_element_map:
-        raise StructureReadError("LAMMPS data requires an element mapping")
-
     atom_style = "charge"
     header = lines[atom_section].lower()
     if "#" in header:
@@ -59,7 +58,7 @@ def _read_lammps_data(
     if atom_style not in {"charge", "atomic"}:
         raise StructureReadError(f"unsupported LAMMPS atom style: {atom_style}")
 
-    atoms: list[tuple[str, tuple[float, float, float]]] = []
+    atoms: list[tuple[int, tuple[float, float, float]]] = []
     in_rows = False
     for line in lines[atom_section + 1 :]:
         stripped = line.strip()
@@ -82,9 +81,7 @@ def _read_lammps_data(
             coords = tuple(float(value) for value in fields[coordinate_offset : coordinate_offset + 3])
         except (TypeError, ValueError) as exc:
             raise StructureReadError("invalid LAMMPS atom row") from exc
-        if type_id not in lammps_element_map:
-            raise StructureReadError(f"missing element mapping for LAMMPS type {type_id}")
-        atoms.append((lammps_element_map[type_id], coords))
+        atoms.append((type_id, coords))
         in_rows = True
         if len(atoms) == atom_count:
             break
@@ -96,7 +93,31 @@ def _read_lammps_data(
     if any(length <= 0 for length in lengths):
         raise StructureReadError("LAMMPS box lengths must be positive")
     origin = [bounds[axis][0] for axis in "xyz"]
-    species = [item[0] for item in atoms]
+    explicit_map = lammps_element_map or {}
+    resolved_map: dict[int, str] = {}
+    inferred: dict[int, str] = {}
+    for type_id in sorted({item[0] for item in atoms}):
+        if type_id in explicit_map:
+            resolved_map[type_id] = explicit_map[type_id]
+            continue
+        try:
+            symbol = Element.from_Z(type_id).symbol
+        except (TypeError, ValueError) as exc:
+            raise StructureReadError(
+                f"LAMMPS type {type_id} is not a valid atomic number"
+            ) from exc
+        resolved_map[type_id] = symbol
+        inferred[type_id] = symbol
+    if inferred:
+        mapping_text = ", ".join(f"{type_id}={symbol}" for type_id, symbol in inferred.items())
+        warnings.warn(
+            "LAMMPS element mapping is incomplete; inferred atomic-number mappings: "
+            f"{mapping_text}. LAMMPS type IDs may be arbitrary; provide "
+            "TYPE=ELEMENT mappings to override.",
+            UserWarning,
+            stacklevel=2,
+        )
+    species = [resolved_map[item[0]] for item in atoms]
     coords = [[value - origin[index] for index, value in enumerate(item[1])] for item in atoms]
     return Structure(Lattice.orthorhombic(*lengths), species, coords, coords_are_cartesian=True)
 
