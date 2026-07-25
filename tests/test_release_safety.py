@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 from llm_matgen.release_safety import format_findings, scan_repository, scan_text
 
@@ -39,6 +40,14 @@ def test_env_example_contains_only_a_placeholder_mp_key() -> None:
     assert assignments == ["MP_API_KEY=your-mp-api-key"]
 
 
+def test_mit_license_is_present_and_declared():
+    license_text = (ROOT / "LICENSE").read_text(encoding="utf-8")
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert "MIT License" in license_text
+    assert 'license = { text = "MIT" }' in pyproject
+
+
 def test_scanner_detects_secrets_and_personal_absolute_paths() -> None:
     secret = "live-" + "A" * 32
     personal_path = "C:" + "\\Users\\alice\\project\\config.json"
@@ -70,6 +79,13 @@ def test_scanner_report_never_echoes_matching_content() -> None:
 
     assert secret not in report
     assert report == "local.env: non-placeholder-secret"
+
+
+def test_scanner_detects_json_escaped_absolute_paths() -> None:
+    escaped_path = "D:" + "\\\\科研\\\\LLM-MatGen\\\\tests\\\\nl-tests\\\\state.json"
+    findings = scan_text(Path("state.json"), json.dumps({"path": escaped_path}))
+
+    assert {finding.rule for finding in findings} == {"personal-absolute-path"}
 
 
 def test_tracked_repository_text_is_release_safe() -> None:

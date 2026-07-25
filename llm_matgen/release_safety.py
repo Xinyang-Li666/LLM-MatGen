@@ -22,6 +22,7 @@ _KNOWN_SECRET = re.compile(
 _PRIVATE_KEY = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")
 _WINDOWS_USER_PATH = re.compile(r"(?i)\b[A-Z]:\\Users\\([^\\/\s]+)(?:\\|/)")
 _UNIX_USER_PATH = re.compile(r"/(?:Users|home)/([^/\s]+)(?:/|$)")
+_WINDOWS_ESCAPED_PATH = re.compile(r'''["'][A-Z]:(?:\\{2})+''')
 
 
 @dataclass(frozen=True)
@@ -76,6 +77,8 @@ def scan_text(path: Path, text: str) -> list[Finding]:
     windows_users = (match.group(1) for match in _WINDOWS_USER_PATH.finditer(text))
     unix_users = (match.group(1) for match in _UNIX_USER_PATH.finditer(text))
     if any(not _is_placeholder_username(user) for user in (*windows_users, *unix_users)):
+        rules.add("personal-absolute-path")
+    if _WINDOWS_ESCAPED_PATH.search(text):
         rules.add("personal-absolute-path")
 
     return [Finding(path=path, rule=rule) for rule in sorted(rules)]
