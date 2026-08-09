@@ -42,7 +42,7 @@ class FilterTrajectoryReader:
     def _iter_atoms(self):
         from ase.io import iread
 
-        kwargs: dict[str, object] = {"format": self.format}
+        kwargs: dict[str, object] = {}
         if self.format == "lammps-dump-text" and self.lammps_type_map:
             max_type = max(self.lammps_type_map)
             specorder: list[str] = []
@@ -69,7 +69,15 @@ class FilterTrajectoryReader:
                 "LAMMPS type mapping is missing; provide TYPE=ELEMENT or "
                 "--assume-type-is-z to use type IDs as atomic numbers"
             )
-        yield from iread(self.path, index=":", **kwargs)
+        if self.format == "lammps-dump-text":
+            # ASE's generic read wrapper materializes all selected LAMMPS frames.
+            # Use the underlying image iterator so large dumps stay streaming.
+            from ase.io.lammpsrun import iread_lammps_dump_text
+
+            with self.path.open("r", encoding="utf-8", errors="replace") as stream:
+                yield from iread_lammps_dump_text(stream, index=slice(None), **kwargs)
+            return
+        yield from iread(self.path, index=":", format=self.format, **kwargs)
 
     def _has_element_column(self) -> bool:
         if self.format != "lammps-dump-text":
