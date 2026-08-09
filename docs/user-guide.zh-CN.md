@@ -498,7 +498,43 @@ llm-matgen db stats --help
 
 在执行导入、导出或查询前，使用相应的 `--help` 核对数据库路径和过滤参数。公开发布时不要提交本地数据库文件。
 
-## 9. 常见问题
+## 9. MD 轨迹非物理结构审查
+
+轨迹审查支持 extended XYZ、LAMMPS dump、XDATCAR 和 ASE trajectory。默认强制检查数值、
+晶胞和组成完整性，并检查元素对原子重叠：
+
+```bash
+llm-matgen filter trajectory production.dump \
+  --lammps-element 1=Ti --lammps-element 2=B \
+  --output-root output
+```
+
+使用参考轨迹后可增加力和配位环境审查：
+
+```bash
+llm-matgen filter trajectory target.dump \
+  --reference clean.dump \
+  --checks overlap force coordination \
+  --output-root output
+```
+
+输出位于唯一运行目录，包含 clean/anomalous 轨迹、`frame-review.jsonl`、`summary.json` 和
+`threshold-profile.json`。逐帧结果会区分 `pass`、`fail` 和 `not_evaluated`；缺少力数据、
+参考轨迹或阈值时不会伪装成检查通过。
+
+LAMMPS dump 缺少映射时，交互模式会提示将 type ID 作为原子序数；非交互运行必须显式添加：
+
+```bash
+--assume-type-is-z
+```
+
+完整参数、退出码和兼容参数请查看：
+
+```bash
+llm-matgen filter trajectory --help
+```
+
+## 10. 常见问题
 
 ### 找不到命令
 
@@ -549,7 +585,7 @@ llm-matgen check structure.data --lammps-element 1=Fe --lammps-element 2=C
 
 不要在报错截图或 issue 中粘贴真实密钥。
 
-## 10. 安全与发布边界
+## 11. 安全与发布边界
 
 不要提交：
 
@@ -562,7 +598,7 @@ llm-matgen check structure.data --lammps-element 1=Fe --lammps-element 2=C
 
 如果密钥曾经出现在聊天、终端输出、文件或提交历史中，应先撤销并轮换，再进行公开发布。
 
-## 11. 责任声明
+## 12. 责任声明
 
 LLM-MatGen 生成的是计算工作流输入候选，不是经过验证的材料结论。项目不保证：
 

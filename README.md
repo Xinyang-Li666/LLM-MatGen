@@ -199,3 +199,45 @@ MCP 客户端负责选择模型、管理模型凭据并把自然语言请求转�
 python -m pytest --import-mode=importlib -q
 python -m compileall -q llm_matgen integrations
 ```
+
+## 多帧数据转换与轨迹采样
+
+DeepMD 数据集可逐帧转换为 POSCAR/CIF/LAMMPS data，并在 manifest 中保留原始帧索引：
+
+```bash
+llm-matgen convert deepmd path/to/deepmd \
+  --output-root output --format poscar --stride 1
+```
+
+长轨迹支持 extended XYZ、XDATCAR 和 LAMMPS dump 的均匀或随机采样：
+
+```bash
+llm-matgen sample trajectory XDATCAR \
+  --method uniform --count 100 --format poscar --output-root samples
+llm-matgen sample trajectory production.dump \
+  --method random --count 100 --seed 42 --format cif --output-root samples
+```
+
+## MD 轨迹非物理结构审查
+
+轨迹审查使用 ASE 流式读取常见轨迹格式，默认检查数值/晶胞完整性和原子重叠，输出
+clean 与 anomalous 轨迹以及逐帧 JSONL 报告：
+
+```bash
+llm-matgen filter trajectory production.dump \
+  --lammps-element 1=Ti --lammps-element 2=B \
+  --output-root output
+```
+
+使用干净参考轨迹标定力和配位环境：
+
+```bash
+llm-matgen filter trajectory target.dump \
+  --reference clean.dump \
+  --checks overlap force coordination \
+  --output-root output
+```
+
+每次执行都会创建唯一运行目录，包含 `clean.extxyz`、`anomalous.extxyz`、
+`frame-review.jsonl`、`summary.json` 和阈值 profile。没有元素映射时，程序会提示是否将
+LAMMPS type ID 作为原子序数；自动化环境请显式使用 `--assume-type-is-z`。
