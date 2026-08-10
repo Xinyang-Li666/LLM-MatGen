@@ -263,6 +263,20 @@ def build_parser() -> argparse.ArgumentParser:
     trajectory.add_argument("--output-root", default="output")
     trajectory.add_argument("--lammps-element", action="append", default=[], metavar="TYPE=ELEMENT")
     trajectory.set_defaults(_handler=_run_sample_trajectory)
+    representative = _add_leaf(sample_commands, "representative", "select representative trajectory frames with RDF/SOAP FPS")
+    representative.add_argument("input", nargs="?")
+    representative.add_argument("--source-config")
+    representative.add_argument("--method", choices=("rdf-fps", "soap-fps"), required=True)
+    representative.add_argument("--count", type=int, required=True)
+    representative.add_argument("--allocation", choices=("proportional", "global"), default="proportional")
+    representative.add_argument("--min-distance", type=float, default=0.0)
+    representative.add_argument("--input-format", choices=("extxyz", "lammps-dump-text", "vasp-xdatcar"))
+    representative.add_argument("--output-root", default="output")
+    representative.add_argument("--cache-dir")
+    representative.add_argument("--r-min", type=float, default=0.8)
+    representative.add_argument("--r-max", type=float, default=6.0)
+    representative.add_argument("--rdf-bin-width", type=float, default=0.05)
+    representative.set_defaults(_handler=_run_sample_representative)
     # filter
     filt = _add_leaf(commands, "filter", "filter multi-frame trajectory data")
     filt_commands = filt.add_subparsers(dest="filter_command")
@@ -652,6 +666,41 @@ def _run_sample_trajectory(args: argparse.Namespace) -> int:
         formats=_trajectory_formats(args.formats), lammps_element_map=_parse_lammps_map(args.lammps_element),
     )
     print(json.dumps({"ok": True, "manifest": str(manifest)}, ensure_ascii=False))
+    return EXIT_SUCCESS
+
+
+def _run_sample_representative(args: argparse.Namespace) -> int:
+    from llm_matgen.trajectories.filtering.readers import FilterTrajectoryReader
+    from llm_matgen.trajectories.representative.engine import RepresentativeSamplingEngine
+    from llm_matgen.trajectories.representative.models import RepresentativeSamplingRequest, SourceSpec
+    from llm_matgen.trajectories.representative.rdf import RDFDescriptor, build_hybrid_channels
+    from llm_matgen.trajectories.representative.sources import load_source_config
+
+    if bool(args.input) == bool(args.source_config):
+        raise ValueError("provide exactly one of INPUT or --source-config")
+    if args.method == "soap-fps":
+        raise ValueError("SOAP-FPS CLI requires the optional SOAP backend implemented in the next release stage")
+    if args.source_config:
+        specs = load_source_config(_safe_workspace_path(args.source_config))
+    else:
+        input_path = _safe_workspace_path(args.input)
+        specs = (SourceSpec(input_path.stem, input_path, args.input_format or "extxyz"),)
+    frames_by_source = {}
+    all_elements = set()
+    for spec in specs:
+        frames = [item.frame for item in __import__("llm_matgen.trajectories.representative.sources", fromlist=["iter_source_frames"]).iter_source_frames(spec)]
+        frames_by_source[spec.name] = frames
+        for frame in frames:
+            all_elements.update(int(value) for value in frame.atomic_numbers)
+    descriptor = RDFDescriptor(
+        build_hybrid_channels(tuple(sorted(all_elements))), args.r_min, args.r_max, args.rdf_bin_width
+    )
+    request = RepresentativeSamplingRequest(
+        specs, args.method, args.count, allocation=args.allocation, min_distance=args.min_distance,
+        output_root=_trajectory_output_root(args.output_root), cache_dir=(Path(args.cache_dir) if args.cache_dir else None),
+    )
+    result = RepresentativeSamplingEngine(request, descriptor).run(frames_by_source)
+    print(json.dumps({"ok": True, "run_dir": str(result.run_dir), "selected_path": str(result.selected_path), "selected_count": result.selected_count}, ensure_ascii=False))
     return EXIT_SUCCESS
 
 
