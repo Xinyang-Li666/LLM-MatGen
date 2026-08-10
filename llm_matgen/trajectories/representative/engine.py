@@ -14,7 +14,7 @@ from llm_matgen.trajectories.filtering.models import FilterFrame
 from .fps import centered_fps
 from .models import RepresentativeSamplingRequest, RepresentativeSamplingResult, SelectionRecord
 from .quotas import allocate_proportional_quotas
-from .writers import write_outputs
+from .writers import write_outputs, write_outputs_streaming
 
 
 class RepresentativeSamplingEngine:
@@ -124,24 +124,23 @@ class RepresentativeSamplingEngine:
                 for index, distance in zip(fps_result.indices, fps_result.distances):
                     group = int(np.searchsorted(offsets, int(index), side="right") - 1)
                     selected_by_source[names[group]][0].add(int(index) - int(offsets[group]))
-            selected_pairs: list[tuple[FilterFrame, SelectionRecord]] = []
-            rank = 0
-            for spec in self.request.sources:
-                name = spec.name
-                selected = selected_by_source.get(name, (set(), ()))[0]
-                if not selected:
-                    continue
-                distances = selected_by_source[name][1]
-                for index, frame in enumerate(source_factories[name]()):
-                    if index in selected:
-                        distance = distances[rank] if rank < len(distances) else None
-                        selected_pairs.append((frame, SelectionRecord(name, int(frame.source_index), frame.timestep, rank, distance, quotas.get(name, 0))))
-                        rank += 1
-            selected_pairs.sort(key=lambda pair: (self._source_order(pair[1].source_name), pair[1].source_index))
-            output = write_outputs(selected_pairs, self.request.output_root, cache_root=self.request.cache_dir)
+            def selected_stream():
+                rank = 0
+                for spec in self.request.sources:
+                    name = spec.name
+                    selected, distances = selected_by_source.get(name, (set(), ()))
+                    if not selected:
+                        continue
+                    distance_by_index = {index: distances[pos] if pos < len(distances) else None for pos, index in enumerate(sorted(selected))}
+                    for index, frame in enumerate(source_factories[name]()):
+                        if index in selected:
+                            yield frame, SelectionRecord(name, int(frame.source_index), frame.timestep, rank, distance_by_index.get(index), quotas.get(name, 0))
+                            rank += 1
+            output = write_outputs_streaming(selected_stream(), self.request.output_root, cache_root=self.request.cache_dir)
             state_path = Path(output["run_dir"]) / "run-state.json"
-            state_path.write_text(json.dumps({"stage": "completed", "selected_count": len(selected_pairs), "streaming": True}, ensure_ascii=False, indent=2), encoding="utf-8")
-            return RepresentativeSamplingResult(Path(output["run_dir"]), Path(output["selected_path"]), Path(output["selection_path"]), Path(output["summary_path"]), Path(output["manifest_path"]), len(selected_pairs))
+            selected_count = int(output["selected_count"])
+            state_path.write_text(json.dumps({"stage": "completed", "selected_count": selected_count, "streaming": True}, ensure_ascii=False, indent=2), encoding="utf-8")
+            return RepresentativeSamplingResult(Path(output["run_dir"]), Path(output["selected_path"]), Path(output["selection_path"]), Path(output["summary_path"]), Path(output["manifest_path"]), selected_count)
         finally:
             for matrix in locals().get("matrices", {}).values():
                 mmap_handle = getattr(matrix, "_mmap", None)

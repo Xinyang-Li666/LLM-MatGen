@@ -61,6 +61,35 @@ def write_outputs(
     return {"run_dir": str(run_dir), "selected_path": str(selected_path), "selection_path": str(selection_path), "summary_path": str(summary_path), "manifest_path": str(manifest_path), "selected_count": len(pairs)}
 
 
+def write_outputs_streaming(
+    selected: Iterable[tuple[FilterFrame, SelectionRecord]],
+    output_root: str | Path,
+    *,
+    cache_root: str | Path | None = None,
+) -> dict[str, str | int]:
+    """Write selected frames one at a time without retaining structures in RAM."""
+    root = Path(output_root); root.mkdir(parents=True, exist_ok=True)
+    run_dir = root / f"run-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}-{uuid.uuid4().hex[:8]}"; run_dir.mkdir()
+    selected_path = run_dir / "selected.extxyz"; selected_part = selected_path.with_suffix(".extxyz.part")
+    selection_path = run_dir / "selection.jsonl"; selection_part = selection_path.with_suffix(".jsonl.part")
+    count = 0
+    with selection_part.open("w", encoding="utf-8") as records:
+        for frame, record in selected:
+            atoms = _atoms(frame, record)
+            write(selected_part, atoms, format="extxyz", append=count > 0)
+            records.write(json.dumps(_record_dict(record), ensure_ascii=False, sort_keys=True) + "\n")
+            count += 1
+    if count == 0:
+        raise ValueError("no frames selected")
+    os.replace(selected_part, selected_path); os.replace(selection_part, selection_path)
+    summary_path = run_dir / "summary.json"; _atomic_json_write(summary_path, {"selected_count": count, "formats": []})
+    manifest = {"selected_path": selected_path.name, "selection_path": selection_path.name, "selected_count": count, "files": [selected_path.name, selection_path.name, "summary.json"]}
+    manifest_path = run_dir / "manifest.json"; _atomic_json_write(manifest_path, manifest)
+    if cache_root is not None:
+        _atomic_json_write(run_dir / "cache-reference.json", {"cache_root": os.path.relpath(Path(cache_root), run_dir), "owned_by_run": False})
+    return {"run_dir": str(run_dir), "selected_path": str(selected_path), "selection_path": str(selection_path), "summary_path": str(summary_path), "manifest_path": str(manifest_path), "selected_count": count}
+
+
 def _atoms(frame: FilterFrame, record: SelectionRecord) -> Atoms:
     atoms = Atoms(numbers=frame.atomic_numbers, positions=frame.positions, cell=frame.cell, pbc=frame.pbc)
     atoms.info.update({"source_name": record.source_name, "source_index": record.source_index, "source_timestep": record.source_timestep, "sampling_rank": record.sampling_rank})
@@ -85,4 +114,3 @@ def _atomic_text_write(path: Path, text: str) -> None:
 
 def _atomic_json_write(path: Path, payload: object) -> None:
     _atomic_text_write(path, json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n")
-
