@@ -276,6 +276,10 @@ def build_parser() -> argparse.ArgumentParser:
     representative.add_argument("--r-min", type=float, default=0.8)
     representative.add_argument("--r-max", type=float, default=6.0)
     representative.add_argument("--rdf-bin-width", type=float, default=0.05)
+    representative.add_argument("--soap-r-cut", type=float, default=5.0)
+    representative.add_argument("--soap-n-max", type=int, default=6)
+    representative.add_argument("--soap-l-max", type=int, default=4)
+    representative.add_argument("--soap-sigma", type=float, default=0.5)
     representative.set_defaults(_handler=_run_sample_representative)
     # filter
     filt = _add_leaf(commands, "filter", "filter multi-frame trajectory data")
@@ -678,8 +682,6 @@ def _run_sample_representative(args: argparse.Namespace) -> int:
 
     if bool(args.input) == bool(args.source_config):
         raise ValueError("provide exactly one of INPUT or --source-config")
-    if args.method == "soap-fps":
-        raise ValueError("SOAP-FPS CLI requires the optional SOAP backend implemented in the next release stage")
     if args.source_config:
         specs = load_source_config(_safe_workspace_path(args.source_config))
     else:
@@ -692,9 +694,16 @@ def _run_sample_representative(args: argparse.Namespace) -> int:
         frames_by_source[spec.name] = frames
         for frame in frames:
             all_elements.update(int(value) for value in frame.atomic_numbers)
-    descriptor = RDFDescriptor(
-        build_hybrid_channels(tuple(sorted(all_elements))), args.r_min, args.r_max, args.rdf_bin_width
-    )
+    if args.method == "soap-fps":
+        from llm_matgen.trajectories.representative.config import SOAPConfig
+        from llm_matgen.trajectories.representative.soap import SOAPDescriptorBackend
+        descriptor = SOAPDescriptorBackend(tuple(sorted(all_elements)), SOAPConfig(
+            r_cut=args.soap_r_cut, n_max=args.soap_n_max, l_max=args.soap_l_max, sigma=args.soap_sigma,
+        ))
+    else:
+        descriptor = RDFDescriptor(
+            build_hybrid_channels(tuple(sorted(all_elements))), args.r_min, args.r_max, args.rdf_bin_width
+        )
     request = RepresentativeSamplingRequest(
         specs, args.method, args.count, allocation=args.allocation, min_distance=args.min_distance,
         output_root=_trajectory_output_root(args.output_root), cache_dir=(Path(args.cache_dir) if args.cache_dir else None),
