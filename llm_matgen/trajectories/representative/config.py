@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 
@@ -92,3 +92,43 @@ def merge_sampling_config(base: RDFSamplingConfig, overrides: dict[str, Any]) ->
             "whiten": merged.reduction.whiten,
         },
     })
+
+
+@dataclass(frozen=True)
+class SOAPConfig:
+    backend: str = "dscribe"
+    r_cut: float = 5.0
+    n_max: int = 6
+    l_max: int = 4
+    sigma: float = 0.5
+    rbf: str = "gto"
+    compression: str = "mu1nu1"
+    pooling: str = "category-mean-std"
+    periodic: bool = True
+    dtype: str = "float32"
+    groups: dict[str, tuple[int, ...]] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.backend != "dscribe" or self.r_cut <= 0 or self.n_max <= 0 or self.l_max < 0 or self.sigma <= 0:
+            raise ValueError("invalid SOAP backend or positive parameters")
+        if self.rbf not in {"gto", "polynomial"} or self.compression not in {"mu1nu1", "crossover"}:
+            raise ValueError("unsupported SOAP rbf or compression")
+        if self.pooling not in {"category-mean-std", "mean-std", "mean"} or self.dtype not in {"float32", "float64"}:
+            raise ValueError("unsupported SOAP pooling or dtype")
+        groups = {str(name): tuple(int(z) for z in values) for name, values in self.groups.items()}
+        if any(not name or not values for name, values in groups.items()):
+            raise ValueError("SOAP groups must contain non-empty categories")
+        flattened = [z for values in groups.values() for z in values]
+        if any(z < 1 or z > 118 for z in flattened) or len(flattened) != len(set(flattened)):
+            raise ValueError("SOAP group elements must be valid and non-overlapping")
+        object.__setattr__(self, "groups", groups)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "SOAPConfig":
+        if data is None:
+            return cls()
+        allowed = set(cls.__dataclass_fields__)
+        unknown = set(data) - allowed
+        if unknown:
+            raise ValueError(f"unknown SOAP configuration fields: {sorted(unknown)}")
+        return cls(**data)

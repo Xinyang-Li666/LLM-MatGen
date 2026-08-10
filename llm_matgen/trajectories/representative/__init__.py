@@ -1,6 +1,6 @@
 """Representative trajectory sampling backends and orchestration."""
 
-from .config import RDFSamplingConfig, ReductionConfig, merge_sampling_config
+from .config import RDFSamplingConfig, ReductionConfig, SOAPConfig, merge_sampling_config
 from .models import (
     RepresentativeSamplingRequest,
     RepresentativeSamplingResult,
@@ -14,6 +14,7 @@ from .service import sample_representative
 __all__ = [
     "RDFSamplingConfig",
     "ReductionConfig",
+    "SOAPConfig",
     "RepresentativeSamplingRequest",
     "RepresentativeSamplingResult",
     "SourceInventory",
