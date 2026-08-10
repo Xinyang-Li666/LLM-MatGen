@@ -22,7 +22,7 @@ class RepresentativeSamplingEngine:
         self.request = request
         self.descriptor = descriptor
 
-    def run(self, frames_by_source: Mapping[str, Sequence[FilterFrame]]) -> RepresentativeSamplingResult:
+    def run(self, frames_by_source: Mapping[str, Sequence[FilterFrame]], *, warm_start: np.ndarray | Mapping[str, np.ndarray] | None = None) -> RepresentativeSamplingResult:
         ordered = [(spec.name, list(frames_by_source.get(spec.name, ()))) for spec in self.request.sources]
         counts = {name: len(frames) for name, frames in ordered}
         total = sum(counts.values())
@@ -34,7 +34,7 @@ class RepresentativeSamplingEngine:
         if self.request.allocation == "global":
             all_frames = [(name, frame) for name, frames in ordered for frame in frames]
             matrix = self._describe([frame for _, frame in all_frames])
-            result = centered_fps(matrix, budget, min_distance=self.request.min_distance)
+            result = centered_fps(matrix, budget, min_distance=self.request.min_distance, warm_start=warm_start if isinstance(warm_start, np.ndarray) else None)
             for rank, index in enumerate(result.indices):
                 name, frame = all_frames[int(index)]
                 selected_pairs.append((frame, SelectionRecord(name, int(frame.source_index), frame.timestep, rank, result.distances[rank] if rank < len(result.distances) else None, 0)))
@@ -45,7 +45,8 @@ class RepresentativeSamplingEngine:
                 if quota <= 0:
                     continue
                 matrix = self._describe(frames)
-                result = centered_fps(matrix, quota, min_distance=self.request.min_distance)
+                initial = warm_start.get(name) if isinstance(warm_start, Mapping) else None
+                result = centered_fps(matrix, quota, min_distance=self.request.min_distance, warm_start=initial)
                 for local_rank, index in enumerate(result.indices):
                     frame = frames[int(index)]
                     distance = result.distances[local_rank] if local_rank < len(result.distances) else None
@@ -72,4 +73,3 @@ class RepresentativeSamplingEngine:
 
     def _source_order(self, name: str) -> int:
         return next(index for index, source in enumerate(self.request.sources) if source.name == name)
-
