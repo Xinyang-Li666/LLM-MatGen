@@ -71,6 +71,14 @@ class SOAPDescriptorBackend:
             species=list(self.species), periodic=self.config.periodic, dtype=self.config.dtype,
         )
         self._feature_count = int(self._descriptor.get_number_of_features())
+        if self.config.groups:
+            self.groups = dict(self.config.groups)
+        else:
+            self.groups = {
+                "TM": tuple(z for z in self.species if z not in {5, 8}),
+                "B": tuple(z for z in self.species if z == 5),
+                "O": tuple(z for z in self.species if z == 8),
+            }
 
     @property
     def feature_names(self) -> tuple[str, ...]:
@@ -89,3 +97,8 @@ class SOAPDescriptorBackend:
         norms = np.linalg.norm(values, axis=1, keepdims=True)
         np.divide(values, norms, out=values, where=norms > 0)
         return values
+
+    def describe(self, frame: FilterFrame) -> np.ndarray:
+        local = self.describe_local(frame)
+        pooled = pool_local_soap(local, frame.atomic_numbers, self.groups, pooling=self.config.pooling)
+        return pooled.values
