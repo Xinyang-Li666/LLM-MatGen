@@ -674,11 +674,10 @@ def _run_sample_trajectory(args: argparse.Namespace) -> int:
 
 
 def _run_sample_representative(args: argparse.Namespace) -> int:
-    from llm_matgen.trajectories.filtering.readers import FilterTrajectoryReader
     from llm_matgen.trajectories.representative.engine import RepresentativeSamplingEngine
     from llm_matgen.trajectories.representative.models import RepresentativeSamplingRequest, SourceSpec
     from llm_matgen.trajectories.representative.rdf import RDFDescriptor, build_hybrid_channels
-    from llm_matgen.trajectories.representative.sources import load_source_config
+    from llm_matgen.trajectories.representative.sources import inventory_sources, iter_source_frames, load_source_config
 
     if bool(args.input) == bool(args.source_config):
         raise ValueError("provide exactly one of INPUT or --source-config")
@@ -687,13 +686,8 @@ def _run_sample_representative(args: argparse.Namespace) -> int:
     else:
         input_path = _safe_workspace_path(args.input)
         specs = (SourceSpec(input_path.stem, input_path, args.input_format or "extxyz"),)
-    frames_by_source = {}
-    all_elements = set()
-    for spec in specs:
-        frames = [item.frame for item in __import__("llm_matgen.trajectories.representative.sources", fromlist=["iter_source_frames"]).iter_source_frames(spec)]
-        frames_by_source[spec.name] = frames
-        for frame in frames:
-            all_elements.update(int(value) for value in frame.atomic_numbers)
+    inventories = inventory_sources(specs, forbidden_atomic_numbers={7})
+    all_elements = set().union(*(inventory.atomic_numbers for inventory in inventories))
     if args.method == "soap-fps":
         from llm_matgen.trajectories.representative.config import SOAPConfig
         from llm_matgen.trajectories.representative.soap import SOAPDescriptorBackend
@@ -708,7 +702,9 @@ def _run_sample_representative(args: argparse.Namespace) -> int:
         specs, args.method, args.count, allocation=args.allocation, min_distance=args.min_distance,
         output_root=_trajectory_output_root(args.output_root), cache_dir=(Path(args.cache_dir) if args.cache_dir else None),
     )
-    result = RepresentativeSamplingEngine(request, descriptor).run(frames_by_source)
+    factories = {spec.name: (lambda spec=spec: (item.frame for item in iter_source_frames(spec))) for spec in specs}
+    counts = {inventory.source.name: inventory.frame_count for inventory in inventories}
+    result = RepresentativeSamplingEngine(request, descriptor).run_streaming(factories, counts)
     print(json.dumps({"ok": True, "run_dir": str(result.run_dir), "selected_path": str(result.selected_path), "selected_count": result.selected_count}, ensure_ascii=False))
     return EXIT_SUCCESS
 

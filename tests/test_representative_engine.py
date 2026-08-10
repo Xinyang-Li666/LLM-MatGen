@@ -34,3 +34,11 @@ def test_global_mode_and_min_distance_stop(tmp_path: Path):
     result = RepresentativeSamplingEngine(request, FakeDescriptor()).run({"a": source_frames("a", 2), "b": source_frames("b", 2)})
     assert result.selected_count == 1
 
+
+def test_streaming_engine_uses_factories_and_memmap_workspace(tmp_path: Path):
+    specs = (SourceSpec("a", Path("a.extxyz"), "extxyz"), SourceSpec("b", Path("b.extxyz"), "extxyz"))
+    request = RepresentativeSamplingRequest(specs, "rdf-fps", 3, output_root=tmp_path)
+    factories = {"a": lambda: iter(source_frames("a", 2)), "b": lambda: iter(source_frames("b", 4))}
+    result = RepresentativeSamplingEngine(request, FakeDescriptor()).run_streaming(factories, {"a": 2, "b": 4})
+    assert result.selected_count == 3
+    assert not (tmp_path / ".descriptor-work").exists()
