@@ -1,5 +1,14 @@
 # LLM-MatGen 中文用户手册
 
+### SOAP-FPS
+
+安装可选依赖：`python -m pip install -e ".[soap]"`。SOAP-FPS 使用周期
+DScribe SOAP，并按 TM/B/O 类别池化均值、总体标准差和存在掩码；
+`examples/sampling/tmb2-soap.json` 给出不含绝对路径的 TMB2 参数。`r_cut`、
+`n_max`、`l_max`、原子数和帧数都会显著影响 CPU 时间，应先对小子集做基准。
+已有训练集 warm start 必须使用相同 species、SOAP 参数、类别和池化配置；
+SOAP-FPS 不负责非物理结构清洗或 DFT/发表质量判断，必须先完成轨迹清洗。
+
 ## 代表性轨迹采样（RDF-FPS）
 
 `sample representative` 是独立于旧版 uniform/random 的代表性采样入口。

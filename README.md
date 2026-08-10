@@ -27,6 +27,12 @@ TMB2 source examples without machine-specific paths are in
 `examples/sampling/`. RDF-FPS and SOAP-FPS are independent backends and may be
 chained by feeding one backend's cleaned/selected extxyz into the other.
 
+SOAP-FPS requires `python -m pip install -e ".[soap]"`. It uses periodic
+DScribe SOAP, category mean/std pooling, optional PCA and the same quota/FPS/
+writer audit pipeline. CPU cost depends strongly on `r_cut`, `n_max`, `l_max`,
+atom count and frame count; benchmark a small subset before an 80k-frame run.
+Warm starts require identical species and SOAP configuration.
+
 Provider-neutral crystal-structure generation for nine generator families.
 LLM-MatGen exposes deterministic generators through CLI, Python, and MCP,
 performs lightweight structural checks, and exports POSCAR, CIF, or LAMMPS
