@@ -30,3 +30,8 @@ def test_species_outside_config_is_rejected():
     backend = SOAPDescriptorBackend((5, 22), SOAPConfig(r_cut=2.5, n_max=2, l_max=1))
     with pytest.raises(ValueError, match="species"):
         backend.describe_local(frame())
+
+
+def test_default_tmb2_groups_keep_carbon_separate():
+    backend = SOAPDescriptorBackend((5, 6, 8, 22), SOAPConfig(r_cut=2.5, n_max=2, l_max=1))
+    assert backend.groups == {"TM": (22,), "B": (5,), "C": (6,), "O": (8,)}

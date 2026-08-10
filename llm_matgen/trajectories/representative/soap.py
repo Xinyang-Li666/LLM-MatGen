@@ -75,8 +75,9 @@ class SOAPDescriptorBackend:
             self.groups = dict(self.config.groups)
         else:
             self.groups = {
-                "TM": tuple(z for z in self.species if z not in {5, 8}),
+                "TM": tuple(z for z in self.species if z not in {5, 6, 8}),
                 "B": tuple(z for z in self.species if z == 5),
+                "C": tuple(z for z in self.species if z == 6),
                 "O": tuple(z for z in self.species if z == 8),
             }
 
