@@ -43,6 +43,7 @@ class SourceInventory:
     atomic_numbers: tuple[int, ...]
     natom_values: tuple[int, ...]
     sha256: str
+    warnings: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.frame_count < 0:
@@ -51,6 +52,12 @@ class SourceInventory:
             raise ValueError("atomic numbers must be between 1 and 118")
         if any(int(count) <= 0 for count in self.natom_values):
             raise ValueError("natom values must be positive")
+
+
+@dataclass(frozen=True)
+class SourceFrame:
+    source: SourceSpec
+    frame: object
 
 
 @dataclass(frozen=True)

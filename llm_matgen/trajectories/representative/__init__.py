@@ -5,6 +5,7 @@ from .models import (
     RepresentativeSamplingRequest,
     RepresentativeSamplingResult,
     SourceInventory,
+    SourceFrame,
     SourceSpec,
 )
 
@@ -14,6 +15,7 @@ __all__ = [
     "RepresentativeSamplingRequest",
     "RepresentativeSamplingResult",
     "SourceInventory",
+    "SourceFrame",
     "SourceSpec",
     "merge_sampling_config",
 ]
