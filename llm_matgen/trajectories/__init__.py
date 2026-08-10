@@ -7,6 +7,7 @@ from .filtering import FilterFrame
 from .filtering.config import FilterConfig as TrajectoryFilterConfig
 from .filtering.engine import FilterEngine, FilterRunResult
 from .filtering.service import TrajectoryFilterService
+from .representative import RepresentativeSamplingEngine, sample_representative
 
 __all__ = [
     "FilterConfig",
@@ -21,4 +22,6 @@ __all__ = [
     "FilterEngine",
     "FilterRunResult",
     "TrajectoryFilterService",
+    "RepresentativeSamplingEngine",
+    "sample_representative",
 ]

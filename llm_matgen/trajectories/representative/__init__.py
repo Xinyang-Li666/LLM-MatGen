@@ -8,6 +8,8 @@ from .models import (
     SourceFrame,
     SourceSpec,
 )
+from .engine import RepresentativeSamplingEngine
+from .service import sample_representative
 
 __all__ = [
     "RDFSamplingConfig",
@@ -18,4 +20,6 @@ __all__ = [
     "SourceFrame",
     "SourceSpec",
     "merge_sampling_config",
+    "RepresentativeSamplingEngine",
+    "sample_representative",
 ]
