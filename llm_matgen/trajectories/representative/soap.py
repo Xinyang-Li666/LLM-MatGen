@@ -2,12 +2,56 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Iterable
 
 import numpy as np
 
 from llm_matgen.trajectories.filtering.models import FilterFrame
 from .config import SOAPConfig
+
+
+@dataclass(frozen=True)
+class SOAPPoolingResult:
+    values: np.ndarray
+    names: tuple[str, ...]
+    presence: tuple[bool, ...]
+
+
+def pool_local_soap(
+    local: np.ndarray,
+    atomic_numbers: np.ndarray,
+    groups: dict[str, tuple[int, ...]],
+    *,
+    pooling: str = "category-mean-std",
+) -> SOAPPoolingResult:
+    local = np.asarray(local, dtype=float)
+    numbers = np.asarray(atomic_numbers, dtype=int)
+    if local.ndim != 2 or local.shape[0] != numbers.size or not np.isfinite(local).all():
+        raise ValueError("local SOAP must be finite with one row per atom")
+    if pooling not in {"category-mean-std", "mean-std", "mean"}:
+        raise ValueError("unsupported SOAP pooling")
+    ordered = tuple(groups.items())
+    values: list[float] = []
+    names: list[str] = []
+    presence: list[bool] = []
+    for category, elements in ordered:
+        mask = np.isin(numbers, elements)
+        presence.append(bool(mask.any()))
+        if mask.any():
+            mean = np.mean(local[mask], axis=0)
+            std = np.std(local[mask], axis=0, ddof=0)
+        else:
+            mean = np.zeros(local.shape[1])
+            std = np.zeros(local.shape[1])
+        if pooling in {"category-mean-std", "mean-std"}:
+            values.extend(mean.tolist()); names.extend(f"{category}:mean:{i}" for i in range(local.shape[1]))
+            values.extend(std.tolist()); names.extend(f"{category}:std:{i}" for i in range(local.shape[1]))
+        else:
+            values.extend(mean.tolist()); names.extend(f"{category}:mean:{i}" for i in range(local.shape[1]))
+    for category, present in zip((name for name, _ in ordered), presence):
+        values.append(float(present)); names.append(f"{category}:present")
+    return SOAPPoolingResult(np.asarray(values, dtype=np.float32), tuple(names), tuple(presence))
 
 
 class SOAPDescriptorBackend:
