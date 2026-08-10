@@ -51,3 +51,14 @@ def test_feature_names_and_hybrid_channels():
     assert any(channel.left == (5,) and channel.right == (22,) for channel in channels)
     descriptor = RDFDescriptor(channels, 0.5, 2.5, 0.5)
     assert len(descriptor.feature_names) == len(channels) * 4
+
+
+def test_small_fully_periodic_frame_uses_vectorized_neighbor_path(monkeypatch):
+    import llm_matgen.trajectories.representative.rdf as rdf_module
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("ASE neighbor list fallback should not be used")
+
+    monkeypatch.setattr(rdf_module, "neighbor_list", forbidden)
+    descriptor = RDFDescriptor((RDFChannel("Ti-B", (22,), (5,)),), 0.0, 3.0, 1.0)
+    assert np.isfinite(descriptor.describe(frame())).all()

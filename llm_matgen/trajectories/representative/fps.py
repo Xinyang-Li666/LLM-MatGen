@@ -100,3 +100,38 @@ def centered_fps(
         )
         nearest[selected] = -np.inf
     return FPSResult(tuple(indices), tuple(distances), "count")
+
+
+def hierarchical_fps(
+    points: np.ndarray,
+    count: int,
+    *,
+    min_distance: float = 0.0,
+    block_count: int = 64,
+    chunk_size: int = 8192,
+) -> FPSResult:
+    """Approximate large FPS by deterministic contiguous trajectory blocks."""
+    values = np.asarray(points)
+    if values.ndim != 2:
+        raise ValueError("points must be a two-dimensional array")
+    if block_count <= 0:
+        raise ValueError("block_count must be positive")
+    if count <= 2048 or len(values) <= 4096 or block_count == 1:
+        return centered_fps(values, count, min_distance=min_distance, chunk_size=chunk_size)
+    blocks = [block for block in np.array_split(np.arange(len(values)), min(block_count, len(values))) if block.size]
+    base, remainder = divmod(min(int(count), len(values)), len(blocks))
+    selected: list[int] = []
+    distances: list[float | None] = []
+    stopped_early = False
+    for block_index, block in enumerate(blocks):
+        quota = base + int(block_index < remainder)
+        if quota <= 0:
+            continue
+        result = centered_fps(
+            values[block], min(quota, len(block)),
+            min_distance=min_distance, chunk_size=chunk_size,
+        )
+        selected.extend(int(block[index]) for index in result.indices)
+        distances.extend(result.distances)
+        stopped_early = stopped_early or result.stop_reason != "count"
+    return FPSResult(tuple(selected), tuple(distances), "min_distance" if stopped_early else "count")

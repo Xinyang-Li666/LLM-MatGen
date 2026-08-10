@@ -20,6 +20,13 @@ class ReductionResult:
     warnings: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class MemmapReductionMetadata:
+    component_count: int
+    explained_variance_ratio: float
+    fit_sample_count: int
+
+
 def reduce_descriptors(
     candidate: np.ndarray,
     output_path: Path,
@@ -70,6 +77,63 @@ def reduce_descriptors(
     )
 
 
+def reduce_descriptor_memmaps(
+    matrices: dict[str, np.memmap],
+    output_dir: Path,
+    config: ReductionConfig,
+    *,
+    transform_chunk_size: int = 2048,
+) -> tuple[dict[str, np.memmap], MemmapReductionMetadata]:
+    """Fit one scaler/PCA on deterministic samples and transform memmaps by chunk."""
+    if not matrices:
+        raise ValueError("at least one descriptor matrix is required")
+    try:
+        from sklearn.decomposition import PCA
+        from sklearn.preprocessing import StandardScaler
+    except ImportError as exc:
+        raise RuntimeError("install optional dependency with `pip install llm-matgen[fps]`") from exc
+    feature_counts = {matrix.shape[1] for matrix in matrices.values()}
+    if len(feature_counts) != 1:
+        raise ValueError("all descriptor matrices must share the same feature dimension")
+    total = sum(len(matrix) for matrix in matrices.values())
+    fit_budget = min(config.fit_sample_count, total)
+    samples: list[np.ndarray] = []
+    assigned = 0
+    items = list(matrices.items())
+    for index, (_, matrix) in enumerate(items):
+        if index == len(items) - 1:
+            quota = fit_budget - assigned
+        else:
+            quota = min(len(matrix), max(1, round(fit_budget * len(matrix) / total)))
+            assigned += quota
+        indices = np.linspace(0, len(matrix) - 1, min(quota, len(matrix)), dtype=int)
+        samples.append(np.asarray(matrix[indices], dtype=np.float32))
+    fit = np.vstack(samples)
+    scaler = StandardScaler(copy=False)
+    fit_scaled = scaler.fit_transform(fit)
+    max_components = min(config.max_components, fit_scaled.shape[0] - 1, fit_scaled.shape[1])
+    if max_components <= 0:
+        component_count = 1
+        explained = 1.0
+        pca = None
+    else:
+        pca = PCA(n_components=max_components, svd_solver="randomized", random_state=config.seed, whiten=config.whiten)
+        pca.fit(fit_scaled)
+        cumulative = np.cumsum(pca.explained_variance_ratio_)
+        component_count = min(max_components, int(np.searchsorted(cumulative, config.variance_target) + 1))
+        explained = float(cumulative[component_count - 1])
+    output_dir = Path(output_dir); output_dir.mkdir(parents=True, exist_ok=True)
+    reduced: dict[str, np.memmap] = {}
+    for name, matrix in matrices.items():
+        target = np.memmap(output_dir / f"{name}.reduced.dat", mode="w+", dtype=np.float32, shape=(len(matrix), component_count))
+        for start in range(0, len(matrix), transform_chunk_size):
+            stop = min(start + transform_chunk_size, len(matrix))
+            scaled = scaler.transform(np.asarray(matrix[start:stop], dtype=np.float32))
+            target[start:stop] = 0.0 if pca is None else pca.transform(scaled)[:, :component_count]
+        target.flush(); reduced[name] = target
+    return reduced, MemmapReductionMetadata(component_count, explained, len(fit))
+
+
 def _validate(array: np.ndarray, label: str) -> np.ndarray:
     values = np.asarray(array, dtype=float)
     if values.ndim != 2 or values.shape[0] == 0 or values.shape[1] == 0:
@@ -107,4 +171,3 @@ def _save(array: np.ndarray, path: Path) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     np.save(path, array)
-

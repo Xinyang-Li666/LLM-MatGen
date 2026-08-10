@@ -11,9 +11,11 @@ from typing import Callable, Iterator, Mapping, Sequence
 import numpy as np
 
 from llm_matgen.trajectories.filtering.models import FilterFrame
-from .fps import centered_fps
+from .config import ReductionConfig
+from .fps import centered_fps, hierarchical_fps
 from .models import RepresentativeSamplingRequest, RepresentativeSamplingResult, SelectionRecord
 from .quotas import allocate_proportional_quotas
+from .reduction import reduce_descriptor_memmaps
 from .writers import write_outputs, write_outputs_streaming
 
 
@@ -110,15 +112,25 @@ class RepresentativeSamplingEngine:
                     raise ValueError(f"source {name} yielded {position} frames, expected {n}")
                 matrix.flush()
                 matrices[name] = matrix
-                quota = quotas.get(name, 0)
-                if self.request.allocation == "global":
-                    continue
-                fps_result = centered_fps(matrix, quota, min_distance=self.request.min_distance)
-                selected_by_source[name] = (set(int(index) for index in fps_result.indices), fps_result.distances)
+            reduced, reduction_metadata = reduce_descriptor_memmaps(
+                matrices, temp_root / "reduced",
+                ReductionConfig(max_components=64, fit_sample_count=5000, seed=42),
+            )
+            if self.request.allocation != "global":
+                for spec in self.request.sources:
+                    name = spec.name
+                    quota = quotas.get(name, 0)
+                    if quota <= 0:
+                        continue
+                    fps_result = hierarchical_fps(
+                        reduced[name], quota, min_distance=self.request.min_distance,
+                        block_count=64,
+                    )
+                    selected_by_source[name] = (set(int(index) for index in fps_result.indices), fps_result.distances)
             if self.request.allocation == "global":
                 names = [spec.name for spec in self.request.sources if counts[spec.name] > 0]
-                combined = np.concatenate([np.asarray(matrices[name]) for name in names], axis=0)
-                fps_result = centered_fps(combined, budget, min_distance=self.request.min_distance)
+                combined = np.concatenate([np.asarray(reduced[name]) for name in names], axis=0)
+                fps_result = hierarchical_fps(combined, budget, min_distance=self.request.min_distance, block_count=64)
                 offsets = np.cumsum([0] + [counts[name] for name in names])
                 selected_by_source = {name: (set(), ()) for name in names}
                 for index, distance in zip(fps_result.indices, fps_result.distances):
@@ -139,10 +151,14 @@ class RepresentativeSamplingEngine:
             output = write_outputs_streaming(selected_stream(), self.request.output_root, cache_root=self.request.cache_dir)
             state_path = Path(output["run_dir"]) / "run-state.json"
             selected_count = int(output["selected_count"])
-            state_path.write_text(json.dumps({"stage": "completed", "selected_count": selected_count, "streaming": True}, ensure_ascii=False, indent=2), encoding="utf-8")
+            state_path.write_text(json.dumps({"stage": "completed", "selected_count": selected_count, "streaming": True, "reduced_components": reduction_metadata.component_count, "explained_variance_ratio": reduction_metadata.explained_variance_ratio, "fps_mode": "hierarchical"}, ensure_ascii=False, indent=2), encoding="utf-8")
             return RepresentativeSamplingResult(Path(output["run_dir"]), Path(output["selected_path"]), Path(output["selection_path"]), Path(output["summary_path"]), Path(output["manifest_path"]), selected_count)
         finally:
             for matrix in locals().get("matrices", {}).values():
+                mmap_handle = getattr(matrix, "_mmap", None)
+                if mmap_handle is not None:
+                    mmap_handle.close()
+            for matrix in locals().get("reduced", {}).values():
                 mmap_handle = getattr(matrix, "_mmap", None)
                 if mmap_handle is not None:
                     mmap_handle.close()

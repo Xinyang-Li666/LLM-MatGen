@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from llm_matgen.trajectories.representative.config import ReductionConfig
-from llm_matgen.trajectories.representative.reduction import reduce_descriptors
+from llm_matgen.trajectories.representative.reduction import reduce_descriptor_memmaps, reduce_descriptors
 
 
 def test_reduction_is_deterministic_and_respects_dimension(tmp_path: Path):
@@ -57,3 +57,18 @@ def test_missing_optional_dependency_has_install_hint(tmp_path: Path, monkeypatc
     monkeypatch.setattr(builtins, "__import__", blocked)
     with pytest.raises(RuntimeError, match=r"llm-matgen\[fps\]"):
         reduce_descriptors(np.ones((3, 2)), tmp_path / "missing.npy", ReductionConfig())
+
+
+def test_common_memmap_reduction_bounds_dimension(tmp_path: Path):
+    rng = np.random.default_rng(19)
+    first = np.memmap(tmp_path / "a.dat", mode="w+", dtype=np.float32, shape=(80, 96))
+    second = np.memmap(tmp_path / "b.dat", mode="w+", dtype=np.float32, shape=(40, 96))
+    first[:] = rng.normal(size=first.shape); second[:] = rng.normal(size=second.shape)
+    reduced, metadata = reduce_descriptor_memmaps(
+        {"a": first, "b": second}, tmp_path / "reduced",
+        ReductionConfig(max_components=16, fit_sample_count=60),
+    )
+    assert reduced["a"].shape[1] <= 16
+    assert reduced["a"].shape[1] == reduced["b"].shape[1]
+    assert metadata.component_count <= 16
+    assert np.isfinite(reduced["a"]).all()

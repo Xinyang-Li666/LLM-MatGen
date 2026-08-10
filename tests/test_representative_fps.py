@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from llm_matgen.trajectories.representative.fps import centered_fps
+from llm_matgen.trajectories.representative.fps import centered_fps, hierarchical_fps
 
 
 def test_centered_fps_is_deterministic_unique_and_starts_at_center():
@@ -45,3 +45,12 @@ def test_centered_fps_rejects_invalid_inputs():
         centered_fps(np.asarray([[np.nan]]), 1)
     with pytest.raises(ValueError, match="dimensions"):
         centered_fps(np.zeros((2, 1)), 1, warm_start=np.zeros((1, 2)))
+
+
+def test_hierarchical_fps_is_deterministic_unique_and_exact_count():
+    points = np.random.default_rng(17).normal(size=(1000, 12))
+    first = hierarchical_fps(points, 250, block_count=16)
+    second = hierarchical_fps(points, 250, block_count=16)
+    assert first.indices == second.indices
+    assert len(first.indices) == 250
+    assert len(set(first.indices)) == 250

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from itertools import combinations_with_replacement
+from itertools import combinations_with_replacement, product
 
 import numpy as np
 from ase import Atoms
@@ -50,12 +50,15 @@ class RDFDescriptor:
         positions = np.asarray(frame.positions, dtype=float)
         if not np.isfinite(positions).all() or (frame.cell is not None and not np.isfinite(frame.cell).all()):
             raise ValueError("frame geometry must be finite")
-        atoms = Atoms(
-            numbers=frame.atomic_numbers.tolist(), positions=positions,
-            cell=np.zeros((3, 3)) if frame.cell is None else frame.cell,
-            pbc=frame.pbc,
-        )
-        center, neighbor, distances = neighbor_list("ijd", atoms, self.r_max)
+        if frame.cell is not None and np.all(frame.pbc) and frame.natoms <= 512:
+            center, neighbor, distances = _vectorized_periodic_neighbors(positions, frame.cell, self.r_max)
+        else:
+            atoms = Atoms(
+                numbers=frame.atomic_numbers.tolist(), positions=positions,
+                cell=np.zeros((3, 3)) if frame.cell is None else frame.cell,
+                pbc=frame.pbc,
+            )
+            center, neighbor, distances = neighbor_list("ijd", atoms, self.r_max)
         result = np.zeros((len(self.channels), self._bin_count), dtype=float)
         volume = abs(float(np.linalg.det(frame.cell))) if frame.cell is not None and np.any(frame.pbc) else None
         numbers = frame.atomic_numbers
@@ -87,3 +90,36 @@ def build_hybrid_channels(atomic_numbers: tuple[int, ...] | list[int]) -> tuple[
         for left, right in combinations_with_replacement(elements, 2)
     )
 
+
+def _vectorized_periodic_neighbors(
+    positions: np.ndarray,
+    cell: np.ndarray,
+    cutoff: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Exact small-cell periodic neighbors without ASE cell-list overhead."""
+    fractional = np.linalg.solve(cell.T, positions.T).T
+    fractional %= 1.0
+    wrapped = fractional @ cell
+    reciprocal = np.linalg.pinv(cell).T
+    face_distances = 1.0 / np.linalg.norm(reciprocal, axis=1)
+    limits = np.ceil(cutoff / face_distances).astype(int)
+    center_parts: list[np.ndarray] = []
+    neighbor_parts: list[np.ndarray] = []
+    distance_parts: list[np.ndarray] = []
+    cutoff2 = cutoff * cutoff
+    for coefficients in product(*(range(-limit, limit + 1) for limit in limits)):
+        shift = np.asarray(coefficients, dtype=float) @ cell
+        delta = wrapped[None, :, :] + shift - wrapped[:, None, :]
+        distance2 = np.einsum("ijk,ijk->ij", delta, delta)
+        if not any(coefficients):
+            np.fill_diagonal(distance2, np.inf)
+        mask = distance2 < cutoff2
+        centers, neighbors = np.nonzero(mask)
+        if centers.size:
+            center_parts.append(centers)
+            neighbor_parts.append(neighbors)
+            distance_parts.append(np.sqrt(distance2[centers, neighbors]))
+    if not center_parts:
+        empty_i = np.empty(0, dtype=int)
+        return empty_i, empty_i.copy(), np.empty(0, dtype=float)
+    return np.concatenate(center_parts), np.concatenate(neighbor_parts), np.concatenate(distance_parts)
