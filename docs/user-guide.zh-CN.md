@@ -1,5 +1,28 @@
 # LLM-MatGen 中文用户手册
 
+## 代表性轨迹采样（RDF-FPS）
+
+`sample representative` 是独立于旧版 uniform/random 的代表性采样入口。
+RDF-FPS 读取已经清洗的多帧轨迹，使用元素对 RDF、配位/近邻统计、晶胞与
+密度特征，经稳健缩放和可选 PCA 后执行确定性 FPS。多来源默认按候选帧数
+比例分配配额，也可使用 `--allocation global` 统一采样。
+
+```bash
+python -m llm_matgen sample representative trajectory.extxyz \
+  --method rdf-fps --count 5000 --allocation proportional \
+  --output-root output/tmb2
+```
+
+多来源配置使用 `--source-config examples/sampling/tmb2-clean-sources.example.json`。
+输入路径应由用户替换为本机路径，示例不包含绝对路径。每次运行都会创建
+唯一目录，主要输出为 `selected.extxyz`，并同时写出 `selection.jsonl`、
+`summary.json`、`manifest.json`；可选 POSCAR/CIF/LAMMPS 导出由后续写出接口
+完成。缓存支持断点续跑，输入文件哈希、元素映射或描述符参数变化会使缓存失效。
+
+清洗必须先于采样；FPS 只衡量描述符空间中的多样性，不是非物理结构审查，
+也不承诺 DFT 收敛、训练质量或发表质量。SOAP-FPS 与 RDF-FPS 是两个完全
+独立但可以串联的后端。
+
 LLM-MatGen 用于生成材料晶体结构，提供命令行、Python 和 MCP 接口，覆盖九类结构生成器。程序默认执行轻量检查，并可导出 POSCAR、CIF 和 LAMMPS data。
 
 本项目只负责结构生成与基础几何检查。用户需要自行完成结构弛豫、能量与稳定性计算，并判断结构是否适合实验、工程应用或学术发表。

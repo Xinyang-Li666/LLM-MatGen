@@ -1,5 +1,32 @@
 # LLM-MatGen
 
+## Representative trajectory sampling
+
+The independent `rdf-fps` backend selects structurally diverse frames from
+cleaned XYZ, extxyz, VASP-XDATCAR, or LAMMPS trajectories. It combines partial
+RDF, coordination/nearest-neighbour, and cell-density features, then applies
+deterministic farthest-point sampling. Install the optional reducer with
+`python -m pip install -e ".[fps]"` when PCA is enabled.
+
+Cleaning is deliberately a separate step. FPS is a diversity sampler, not a
+physical-validity check and it does not guarantee DFT convergence, training
+quality, or publication quality. Use proportional source quotas for multi-model
+datasets; `selected.extxyz` and the JSON/JSONL audit files are written to a new
+run directory. Shared descriptor caches can be resumed and are invalidated by
+input hashes, element mappings, or descriptor settings.
+
+Example:
+
+```bash
+python -m llm_matgen sample representative trajectory.extxyz \
+  --method rdf-fps --count 5000 --allocation proportional \
+  --output-root output/tmb2
+```
+
+TMB2 source examples without machine-specific paths are in
+`examples/sampling/`. RDF-FPS and SOAP-FPS are independent backends and may be
+chained by feeding one backend's cleaned/selected extxyz into the other.
+
 Provider-neutral crystal-structure generation for nine generator families.
 LLM-MatGen exposes deterministic generators through CLI, Python, and MCP,
 performs lightweight structural checks, and exports POSCAR, CIF, or LAMMPS
