@@ -26,6 +26,13 @@ from llm_matgen.generators.models import GeneratedStructure, GenerationResult, P
 from llm_matgen.utils.structure import structure_sha256
 
 
+_COVALENT_RADII = {"H": 0.31, "C": 0.76, "N": 0.71, "O": 0.66, "S": 1.05, "P": 1.07}
+
+
+def _covalent_radius(symbol: str) -> float:
+    return _COVALENT_RADII.get(symbol, 1.25)
+
+
 class _AdsorptionModel(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid", frozen=True)
 
@@ -36,6 +43,24 @@ class AdsorptionInput(_AdsorptionModel):
     slab: Structure
     molecule: Molecule | Structure
     anchor_index: PositiveInt = Field(description="One-based atom index in the adsorbate")
+    gas_reference: Molecule | Structure | None = None
+    input_source: str = "in-memory"
+    input_structure_hash: str | None = None
+    reference_axis: tuple[float, float, float] | None = None
+    denticity: PositiveInt = 1
+    rigid: bool = True
+    charge: int | None = None
+    spin_multiplicity: PositiveInt | None = None
+
+    @field_validator("reference_axis")
+    @classmethod
+    def finite_reference_axis(cls, value):
+        if value is None:
+            return None
+        array = np.asarray(value, dtype=float)
+        if array.shape != (3,) or not np.isfinite(array).all() or np.linalg.norm(array) <= 1e-12:
+            raise ValueError("reference axis must be a non-zero finite vector")
+        return tuple(float(item) for item in array)
 
     @model_validator(mode="after")
     def validate_input(self) -> "AdsorptionInput":
@@ -46,6 +71,40 @@ class AdsorptionInput(_AdsorptionModel):
         coords = np.asarray(self.molecule.cart_coords, dtype=float)
         if not np.isfinite(coords).all():
             raise ValueError("molecule coordinates must be finite")
+        if self.denticity != 1:
+            raise ValueError("only a single-anchor adsorbate is supported")
+        if not self.rigid:
+            raise ValueError("only rigid adsorbates are supported")
+        if len(self.molecule) > 1 and self.reference_axis is None:
+            raise ValueError("multi-atom adsorbate requires reference axis")
+        molecule_charge = int(round(float(getattr(self.molecule, "charge", 0))))
+        if self.charge is None:
+            object.__setattr__(self, "charge", molecule_charge)
+        elif self.charge != molecule_charge:
+            raise ValueError("charge must match the adsorbate molecule")
+        molecule_spin = int(getattr(self.molecule, "spin_multiplicity", 1))
+        if self.spin_multiplicity is None:
+            object.__setattr__(self, "spin_multiplicity", molecule_spin)
+        elif self.spin_multiplicity != molecule_spin:
+            raise ValueError("spin multiplicity must match the adsorbate molecule")
+        if len(self.molecule) > 1:
+            adjacency = [set() for _ in range(len(self.molecule))]
+            for left in range(len(self.molecule)):
+                for right in range(left + 1, len(self.molecule)):
+                    symbols = (str(self.molecule[left].specie), str(self.molecule[right].specie))
+                    if self.molecule.get_distance(left, right) <= 1.25 * sum(_covalent_radius(symbol) for symbol in symbols):
+                        adjacency[left].add(right)
+                        adjacency[right].add(left)
+            seen: set[int] = set()
+            stack = [self.anchor_index_zero_based]
+            while stack:
+                current = stack.pop()
+                if current in seen:
+                    continue
+                seen.add(current)
+                stack.extend(adjacency[current] - seen)
+            if len(seen) != len(self.molecule):
+                raise ValueError("adsorbate bond graph must be connected")
         return self
 
     @property
@@ -65,6 +124,18 @@ class AdsorptionParams(_AdsorptionModel):
     fixed_bottom_layers: int = Field(default=0, ge=0)
     preview: bool = False
     max_attempts: PositiveInt | None = None
+    history_policy: Literal["off", "prefer", "require"] | None = None
+    site_types: tuple[str, ...] | None = None
+    explicit_sites: tuple[tuple[float, float, float], ...] = ()
+    max_proposal_attempts: PositiveInt | None = None
+    anchor_contact_window: tuple[float, float] = (0.75, 1.35)
+    azimuths: tuple[float, ...] = (0.0,)
+    tilts: tuple[float, ...] = (0.0,)
+    rolls: tuple[float, ...] = (0.0,)
+    heights: tuple[float, ...] | None = None
+    layer_tolerance: PositiveFloat = 0.15
+    coverage: float | None = Field(default=None, gt=0.0, le=1.0)
+    min_vacuum_each_side: float = Field(default=0.0, ge=0.0)
 
     @field_validator("site_height")
     @classmethod
@@ -72,6 +143,47 @@ class AdsorptionParams(_AdsorptionModel):
         if not math.isfinite(value):
             raise ValueError("site_height must be finite")
         return value
+
+    @field_validator("azimuths", "tilts", "rolls")
+    @classmethod
+    def finite_pose_set(cls, value):
+        if not value or not all(math.isfinite(float(item)) for item in value):
+            raise ValueError("pose sets must be non-empty and finite")
+        return tuple(float(item) for item in value)
+
+    @field_validator("explicit_sites")
+    @classmethod
+    def finite_explicit_sites(cls, value):
+        normalized = tuple(tuple(float(item) for item in position) for position in value)
+        if any(len(position) != 3 or not np.isfinite(position).all() for position in normalized):
+            raise ValueError("explicit Cartesian sites must contain finite triplets")
+        return normalized
+
+    @model_validator(mode="after")
+    def normalize_aliases(self):
+        if self.history_policy is not None:
+            object.__setattr__(self, "history_mode", self.history_policy)
+        if self.site_types is not None:
+            allowed = {"ontop", "top", "bridge", "hollow", "hollow4", "defect", "doped", "undercoordinated", "explicit"}
+            if not self.site_types or not set(self.site_types) <= allowed:
+                raise ValueError("site_types contains an unsupported adsorption site type")
+            object.__setattr__(self, "site_kinds", tuple("ontop" if item == "top" else item for item in self.site_types))
+        if self.max_proposal_attempts is not None:
+            if self.max_attempts is not None and self.max_attempts != self.max_proposal_attempts:
+                raise ValueError("max_attempts and max_proposal_attempts disagree")
+            object.__setattr__(self, "max_attempts", self.max_proposal_attempts)
+        if self.heights is not None:
+            if not self.heights or not all(math.isfinite(float(item)) and float(item) > 0 for item in self.heights):
+                raise ValueError("heights must be finite and positive")
+            object.__setattr__(self, "site_height", float(self.heights[0]))
+        lower, upper = self.anchor_contact_window
+        if not math.isfinite(lower) or not math.isfinite(upper) or not 0 < lower < upper:
+            raise ValueError("anchor contact window must be finite and increasing")
+        if self.max_attempts is not None and self.max_attempts < self.max_structures:
+            raise ValueError("max_attempts must not be below max_structures")
+        if self.max_structures > 100_000 or (self.max_attempts is not None and self.max_attempts > 1_000_000):
+            raise ValueError("adsorption generation bounds are too large")
+        return self
 
 
 class DFTHandoffMatrix(_AdsorptionModel):
