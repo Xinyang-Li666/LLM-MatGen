@@ -122,3 +122,87 @@ class AlgorithmicProposalSource:
                     adsorbate_coords=coords,
                     frame=frame,
                 )
+
+
+@dataclass(frozen=True)
+class ProposalStreamAudit:
+    attempted: int
+    accepted: int
+    rejected: int
+    truncated: bool
+
+
+def _value(item, key: str, default=None):
+    return item.get(key, default) if isinstance(item, dict) else getattr(item, key, default)
+
+
+class RetrievedProposalSource:
+    """Replay history as local fractional poses on the current slab."""
+
+    def __init__(self, slab: Structure, molecule: Molecule, history: Iterable, *, height: float = 2.0, anchor_index: int = 0):
+        if not 0 <= anchor_index < len(molecule):
+            raise ValueError("anchor_index must be a valid zero-based molecule index")
+        self.slab = slab
+        self.molecule = molecule
+        self.history = tuple(history)
+        self.height = float(height)
+        self.anchor_index = anchor_index
+
+    def iter_proposals(self) -> Iterable[AdsorptionProposal]:
+        molecule_coords = np.asarray(self.molecule.cart_coords, dtype=float)
+        anchor = molecule_coords[self.anchor_index]
+        for item in sorted(self.history, key=lambda value: str(_value(value, "revision_id", ""))):
+            revision_id = str(_value(item, "revision_id", "unknown"))
+            side = str(_value(item, "side", "top"))
+            if side not in {"top", "bottom"}:
+                continue
+            frame = SurfaceFrame.from_slab(self.slab, side=side)
+            fractional = _value(item, "fractional_site")
+            if fractional is None:
+                continue
+            site = np.asarray(self.slab.lattice.get_cartesian_coords(fractional), dtype=float)
+            site += np.asarray(frame.normal) * self.height
+            coords = molecule_coords + site - anchor
+            yield AdsorptionProposal(
+                site_id=f"history:{revision_id}",
+                site_kind=str(_value(item, "site_kind", "history")),
+                side=side,
+                cartesian_site=tuple(site.tolist()),
+                adsorbate_coords=coords,
+                frame=frame,
+                source="history",
+            )
+
+
+def resolve_history(mode: str, history_source, fallback_source):
+    if mode not in {"off", "prefer", "require"}:
+        raise ValueError("history mode must be off, prefer or require")
+    if mode == "off":
+        return fallback_source, None
+    if history_source is not None:
+        return history_source, None
+    if mode == "require":
+        raise ValueError("history proposals are required but unavailable")
+    return fallback_source, "history unavailable; fallback to algorithmic proposals"
+
+
+def bounded_proposal_stream(proposals: Iterable, *, max_attempts: int):
+    if max_attempts <= 0:
+        raise ValueError("max_attempts must be positive")
+    selected = []
+    attempted = rejected = 0
+    truncated = False
+    iterator = iter(proposals)
+    while attempted < max_attempts:
+        try:
+            proposal = next(iterator)
+        except StopIteration:
+            break
+        attempted += 1
+        if proposal is None:
+            rejected += 1
+            continue
+        selected.append(proposal)
+    else:
+        truncated = True
+    return selected, ProposalStreamAudit(attempted, len(selected), rejected, truncated)
