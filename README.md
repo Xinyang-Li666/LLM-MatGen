@@ -50,7 +50,7 @@ LLM-MatGen 是一个由任意兼容客户端驱动的材料晶体结构生成工
 | 间隙原子 | `interstitial`   | 在候选间隙位点插入元素                         |
 | 取代掺杂 | `doping`         | 用掺杂元素替换基体元素                         |
 | 固溶体  | `solid-solution` | 按组成生成随机或 SQS 固溶体                    |
-| 表面   | `surface`        | 按 Miller 指数生成带真空层的表面                |
+| 表面   | `surface`        | 按 Miller 指数生成带真空层的表面，可选近似正交晶胞 |
 | 晶界   | `grain-boundary` | 按旋转轴与角度生成晶界                         |
 | 界面   | `interface`      | 匹配薄膜和基底并构造界面                        |
 | 层错   | `stacking-fault` | 按滑移面和位移矢量生成层错                       |
@@ -63,6 +63,15 @@ LLM-MatGen 是一个由任意兼容客户端驱动的材料晶体结构生成工
 - LAMMPS data
 
 LAMMPS data 仅包含结构和原子类型，不包含势函数或计算参数。
+
+表面结构可显式启用近似正交晶胞模式。它只使用面内整数超胞，不施加连续应变；“近似正交”不保证含真空的三条边等长。面积倍率和实际晶胞诊断会写入 manifest。
+
+```bash
+llm-matgen generate surface \
+  --input path/to/si.cif --miller 1,1,1 \
+  --slab-size 12 --vacuum-size 15 \
+  --cell-shape near-orthogonal --format poscar
+```
 
 ## 安装
 

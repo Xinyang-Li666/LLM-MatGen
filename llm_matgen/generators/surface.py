@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Literal
 import numpy as np
 from pydantic import Field, PositiveFloat, PositiveInt, field_validator
 from pymatgen.core import Structure
@@ -10,6 +11,14 @@ from pymatgen.core.surface import SlabGenerator
 from pymatgen.analysis.structure_matcher import StructureMatcher
 
 from llm_matgen.generators.extended import MillerIndex, normalize_miller
+from llm_matgen.generators.surface_cell import (
+    InplaneTransform,
+    apply_inplane_transform,
+    find_inplane_transform,
+    lattice_angles,
+    measure_slab_dimensions,
+    orthogonalize_c_axis,
+)
 from llm_matgen.generators.models import (
     BaseGenerationParams,
     GeneratedStructure,
@@ -27,6 +36,9 @@ class SurfaceParams(BaseGenerationParams):
     center_slab: bool = True
     primitive: bool = True
     max_normal_search: PositiveInt | None = None
+    cell_shape: Literal["native", "near-orthogonal"] = "native"
+    orthogonal_max_area: PositiveInt = 8
+    orthogonal_tolerance: PositiveFloat = 0.1
 
     @field_validator("miller_indices")
     @classmethod
@@ -61,32 +73,41 @@ class SurfaceGenerator:
                 warnings.append(f"no slab generated for Miller index {miller}")
                 continue
             for termination, slab in enumerate(slabs):
-                if len(slab) > params.max_atoms_per_structure:
-                    raise ValueError(
-                        f"surface atom limit exceeded: {len(slab)} > {params.max_atoms_per_structure}"
+                shaped, diagnostics, shape_warnings = self._shape_surface_cell(slab, params)
+                warnings.extend(
+                    f"Miller index {miller}, termination {termination}: {warning}"
+                    for warning in shape_warnings
+                )
+                if len(shaped) > params.max_atoms_per_structure:
+                    message = (
+                        f"surface atom limit exceeded after cell shaping: "
+                        f"base={len(slab)}, area_multiplier={diagnostics['area_multiplier']}, "
+                        f"final={len(shaped)} > {params.max_atoms_per_structure}"
                     )
-                child_id = structure_sha256(slab)
-                if any(matcher.fit(slab, item.structure) for item in generated):
+                    if params.cell_shape == "native":
+                        raise ValueError(message)
+                    warnings.append(
+                        f"Miller index {miller}, termination {termination}: {message}"
+                    )
+                    continue
+                child_id = structure_sha256(shaped)
+                if any(matcher.fit(shaped, item.structure) for item in generated):
                     warnings.append(
                         f"duplicate surface skipped for Miller index {miller}, termination {termination}"
                     )
                     continue
-                frac_z = np.asarray(slab.frac_coords)[:, 2]
-                material_span = float((frac_z.max() - frac_z.min()) * slab.lattice.c)
                 generated.append(
                     GeneratedStructure(
-                        structure=slab,
+                        structure=shaped,
                         record=StructureRecord(
                             structure_id=child_id,
                             parent_structure_id=parent_id,
-                            formula=slab.composition.reduced_formula,
-                            n_atoms=len(slab),
+                            formula=shaped.composition.reduced_formula,
+                            n_atoms=len(shaped),
                             actual_parameters={
                                 "miller_index": list(miller),
                                 "termination": termination,
-                                "cell_height": float(slab.lattice.c),
-                                "material_span": material_span,
-                                "vacuum_estimate": max(0.0, float(slab.lattice.c) - material_span),
+                                **diagnostics,
                             },
                             site_mapping={site_id: None for site_id in parent_sites},
                         ),
@@ -116,3 +137,77 @@ class SurfaceGenerator:
                 created_at=datetime.now(timezone.utc),
             ),
         )
+
+    def _shape_surface_cell(
+        self, slab: Structure, params: SurfaceParams
+    ) -> tuple[Structure, dict[str, object], list[str]]:
+        """Shape one slab and return diagnostics plus non-fatal warnings."""
+        warnings: list[str] = []
+        status = "native"
+        shaped = slab.copy()
+        transform = InplaneTransform(
+            matrix=((1, 0), (0, 1)),
+            lattice_angles=lattice_angles(shaped.lattice.matrix),
+            area_multiplier=1,
+            inplane_aspect_ratio=(
+                float(np.linalg.norm(shaped.lattice.matrix[0]))
+                / float(np.linalg.norm(shaped.lattice.matrix[1]))
+            ),
+            total_angle_error=float(
+                sum(abs(angle - 90.0) for angle in lattice_angles(shaped.lattice.matrix))
+            ),
+            strict=all(
+                abs(angle - 90.0) <= params.orthogonal_tolerance
+                for angle in lattice_angles(shaped.lattice.matrix)
+            ),
+        )
+
+        if params.cell_shape == "near-orthogonal":
+            try:
+                shaped = orthogonalize_c_axis(slab)
+            except Exception as exc:
+                status = "fallback-native"
+                warnings.append(f"c-axis orthogonalization unavailable: {exc}")
+            else:
+                try:
+                    candidate = find_inplane_transform(
+                        shaped,
+                        max_area=params.orthogonal_max_area,
+                        tolerance=params.orthogonal_tolerance,
+                    )
+                    shaped_candidate = apply_inplane_transform(shaped, candidate)
+                    transform = candidate
+                    shaped = shaped_candidate
+                    status = "strict" if transform.strict else "approximate"
+                    if status == "approximate":
+                        warnings.append(
+                            "best integer cell is approximate; "
+                            f"angles={tuple(round(value, 6) for value in transform.lattice_angles)}"
+                        )
+                except Exception as exc:
+                    status = "fallback-c-orthogonal"
+                    warnings.append(f"in-plane integer search unavailable: {exc}")
+
+        final_angles = lattice_angles(shaped.lattice.matrix)
+        span, vacuum = measure_slab_dimensions(shaped)
+        a_length = float(np.linalg.norm(shaped.lattice.matrix[0]))
+        b_length = float(np.linalg.norm(shaped.lattice.matrix[1]))
+        diagnostics = {
+            "cell_shape_requested": params.cell_shape,
+            "cell_shape_status": status,
+            "inplane_transform": [list(row) for row in transform.matrix],
+            "area_multiplier": transform.area_multiplier,
+            "lattice_lengths": [
+                float(np.linalg.norm(vector)) for vector in shaped.lattice.matrix
+            ],
+            "lattice_angles": [float(angle) for angle in final_angles],
+            "inplane_aspect_ratio": max(a_length, b_length) / min(a_length, b_length),
+            "cell_height": float(np.linalg.norm(shaped.lattice.matrix[2])),
+            "material_span": span,
+            "vacuum_estimate": vacuum,
+        }
+        warnings.append(
+            f"cell shape={status}; area multiplier={transform.area_multiplier}; "
+            f"angles={tuple(round(value, 6) for value in final_angles)}"
+        )
+        return shaped, diagnostics, warnings

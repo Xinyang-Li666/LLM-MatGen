@@ -270,6 +270,9 @@ llm-matgen generate solid-solution \
 - `--vacuum-size Å`：真空层最小厚度。
 - `--no-center`：不将 slab 居中。
 - `--conventional`：先转换为标准常规晶胞。
+- `--cell-shape native|near-orthogonal`：晶胞表示；默认 `native`，近似正交模式只使用面内整数超胞。
+- `--orthogonal-max-area N`：近似正交面内面积倍率上限，默认 8。
+- `--orthogonal-tolerance DEG`：严格正交判定的角度容差，默认 0.1°。
 
 ```bash
 llm-matgen generate surface \
@@ -282,6 +285,24 @@ llm-matgen generate surface \
 ```
 
 不同终止面可能生成多个结构，并受 `--max-structures` 限制。
+
+`near-orthogonal` 会先使 c 轴接近表面法向，再搜索面内整数变换，使三个晶格夹角尽量接近 90°、面内长宽比尽量接近 1。不施加应变，也不保证三边等长（尤其是含真空的 c 轴），因此应理解为“近似正交”而不是严格立方晶胞。正交化可能按面积倍率增加原子数；实际变换矩阵、倍率、夹角、边长、原子厚度和真空估计写入 manifest。
+
+如果有限面积内无法达到 0.1° 容差，程序仍输出最佳近似结构并标记 `approximate`；如果 pymatgen 能力不可用，则记录 `fallback-native` 或 `fallback-c-orthogonal`。当前 LAMMPS data 导出器只支持严格正交晶胞，近似或回退得到的斜晶胞应优先导出 POSCAR/CIF。
+
+近似正交示例：
+
+```bash
+llm-matgen generate surface \
+  --input path/to/si.cif \
+  --miller 1,1,1 \
+  --slab-size 12 \
+  --vacuum-size 15 \
+  --cell-shape near-orthogonal \
+  --orthogonal-max-area 8 \
+  --orthogonal-tolerance 0.1 \
+  --format poscar
+```
 
 ### 3.6 晶界 `grain-boundary`
 
