@@ -130,6 +130,8 @@ class StructureExporter:
         path: Path,
         atom_style: str,
     ) -> dict[str, object]:
+        if "selective_dynamics" in structure.site_properties:
+            raise ValueError("LAMMPS data export would lose selective dynamics/fixed-layer information")
         if atom_style not in {"charge", "atomic"}:
             raise ValueError(f"unsupported LAMMPS atom style: {atom_style}")
         lattice = np.asarray(structure.lattice.matrix, dtype=float)

@@ -53,6 +53,7 @@ class GenerationPipeline:
         export_options: ExportOptions,
         *,
         run_id: str | None = None,
+        artifact_contributor=None,
     ) -> PipelineResult:
         generation = generator.generate(structure, params)
         resolved_run_id = run_id or f"run-{uuid4().hex[:12]}"
@@ -105,6 +106,19 @@ class GenerationPipeline:
                         path=artifact.path.relative_to(run_dir).as_posix(),
                         sha256=artifact.sha256,
                         metadata=artifact.metadata,
+                    )
+                )
+
+        if artifact_contributor is not None:
+            contributed = artifact_contributor(run_dir, structure, generation)
+            for artifact in contributed:
+                manifest_artifacts.append(
+                    ManifestArtifact(
+                        structure_id="__run__",
+                        format=f"adsorption/{artifact.kind}",
+                        path=artifact.path.relative_to(run_dir).as_posix(),
+                        sha256=artifact.sha256,
+                        metadata={"run_level": True},
                     )
                 )
 
