@@ -38,7 +38,7 @@ def test_snapshot_contains_stable_relative_paths_size_mtime_and_hash(tmp_path: P
     assert [item.relative_path for item in snapshot.files] == ["OUTCAR", "POSCAR"]
 
 
-@pytest.mark.parametrize("value", ["../case", "a/../../case", "C:\\case", "bad\x00path"])
+@pytest.mark.parametrize("value", ["../case", "a/../../case", str(Path.cwd().anchor) + "case", "bad\x00path"])
 def test_snapshot_rejects_path_escape_and_nul(tmp_path: Path, value: str):
     from llm_matgen.adsorption.sources.local import CaseSourceError, LocalDirectoryCaseSource
 
