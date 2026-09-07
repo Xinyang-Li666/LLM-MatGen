@@ -226,6 +226,11 @@ class AdsorptionGenerator:
             inputs.molecule if isinstance(inputs.molecule, Molecule) else Molecule(inputs.molecule.species, inputs.molecule.cart_coords),
             height=float(params.site_height),
             anchor_index=inputs.anchor_index_zero_based,
+            reference_axis=inputs.reference_axis or (0.0, 0.0, 1.0),
+            azimuths=params.azimuths,
+            tilts=params.tilts,
+            rolls=params.rolls,
+            heights=params.heights,
         )
         history_source = None
         if params.history_mode != "off" and self.history:
@@ -237,7 +242,8 @@ class AdsorptionGenerator:
                 anchor_index=inputs.anchor_index_zero_based,
             )
         selected_source, fallback_reason = resolve_history(params.history_mode, history_source, algorithmic)
-        proposals = selected_source.iter_proposals(site_kinds=params.site_kinds, side=params.surface_side) if selected_source is algorithmic else selected_source.iter_proposals()
+        explicit = tuple((f"explicit-{index:04d}", coords) for index, coords in enumerate(params.explicit_sites))
+        proposals = selected_source.iter_proposals(site_kinds=params.site_kinds, side=params.surface_side, explicit_sites=explicit or None) if selected_source is algorithmic else selected_source.iter_proposals()
         attempts = params.max_attempts or max(params.max_structures * 20, params.max_structures)
         candidates, audit = bounded_proposal_stream(proposals, max_attempts=attempts)
         generated: list[GeneratedStructure] = []

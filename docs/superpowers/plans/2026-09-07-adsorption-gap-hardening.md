@@ -30,7 +30,7 @@
 4. 增加有界 `azimuths/tilts/rolls/heights`、显式 Cartesian 位点、`max_proposal_attempts`、锚点接触窗口和单侧真空阈值；所有浮点必须有限。
 5. 运行定向测试与既有生成器契约测试，提交：`feat: harden adsorption input and pose contracts`。
 
-## Task 2：补齐刚体姿态与算法位点
+## Task 2：补齐刚体姿态与算法位点 `[completed]`
 
 **Files:**
 
