@@ -339,6 +339,25 @@ def build_parser() -> argparse.ArgumentParser:
     mcp = _add_leaf(commands, "mcp", "run the Model Context Protocol server")
     mcp.add_argument("--output-root", default="output")
     mcp.set_defaults(_handler=_run_mcp)
+    cases = _add_leaf(commands, "cases", "manage adsorption history cases")
+    case_commands = cases.add_subparsers(dest="cases_command")
+    case_sources = _add_leaf(case_commands, "sources", "list configured case sources")
+    case_sources.set_defaults(_handler=_run_cases_sources)
+    case_scan = _add_leaf(case_commands, "scan", "scan a configured case source")
+    case_scan.add_argument("--source", required=True)
+    case_scan.add_argument("--store-root", default=None)
+    case_scan.set_defaults(_handler=_run_cases_scan)
+    case_status = _add_leaf(case_commands, "status", "show case index status")
+    case_status.add_argument("--store-root", default=None)
+    case_status.set_defaults(_handler=_run_cases_status)
+    case_query = _add_leaf(case_commands, "query", "query indexed case revisions")
+    case_query.add_argument("--store-root", default=None)
+    case_query.add_argument("--top-k", type=int, default=10)
+    case_query.set_defaults(_handler=_run_cases_query)
+    case_inspect = _add_leaf(case_commands, "inspect", "inspect one indexed case revision")
+    case_inspect.add_argument("revision_id")
+    case_inspect.add_argument("--store-root", default=None)
+    case_inspect.set_defaults(_handler=_run_cases_inspect)
     config = _add_leaf(commands, "config", "manage non-sensitive configuration")
     config_commands = config.add_subparsers(dest="config_command")
     set_provider = _add_leaf(config_commands, "set-provider", "set the default provider")
@@ -819,6 +838,76 @@ def _run_config_set(args: argparse.Namespace) -> int:
 
     data = ConfigManager().set(args._config_field, args.value)
     print(json.dumps(data, ensure_ascii=False))
+    return EXIT_SUCCESS
+
+
+def _case_store(args):
+    from llm_matgen.adsorption.store import AdsorptionCaseStore
+    from llm_matgen.config import ConfigManager
+
+    configured = ConfigManager().load_adsorption()
+    root = Path(args.store_root) if args.store_root else configured.resolved_store_root
+    return AdsorptionCaseStore(root)
+
+
+def _case_source(name: str):
+    from llm_matgen.adsorption.config import LocalSourceConfig, SSHSourceConfig
+    from llm_matgen.adsorption.sources.local import LocalDirectoryCaseSource
+    from llm_matgen.adsorption.sources.ssh import SSHCaseSource
+    from llm_matgen.config import ConfigManager
+
+    configured = ConfigManager().load_adsorption()
+    source = next((item for item in configured.sources if item.name == name), None)
+    if source is None:
+        raise ValueError(f"unknown adsorption case source: {name}")
+    if isinstance(source, LocalSourceConfig):
+        return LocalDirectoryCaseSource(source.root)
+    if isinstance(source, SSHSourceConfig):
+        return SSHCaseSource(source)
+    raise ValueError(f"unsupported adsorption case source: {name}")
+
+
+def _run_cases_sources(args: argparse.Namespace) -> int:
+    from llm_matgen.config import ConfigManager
+
+    config = ConfigManager().load_adsorption()
+    print(json.dumps({"sources": [item.model_dump(mode="json") for item in config.sources]}, ensure_ascii=False))
+    return EXIT_SUCCESS
+
+
+def _run_cases_scan(args: argparse.Namespace) -> int:
+    from llm_matgen.adsorption.extractor import CaseExtractor
+
+    index_revision = _case_store(args).scan(_case_source(args.source), CaseExtractor())
+    print(json.dumps({"source": args.source, "index_revision": index_revision}, ensure_ascii=False))
+    return EXIT_SUCCESS
+
+
+def _run_cases_status(args: argparse.Namespace) -> int:
+    store = _case_store(args)
+    status = store.status()
+    status["active_revisions"] = len(store.list_revisions())
+    print(json.dumps({"status": status}, ensure_ascii=False))
+    return EXIT_SUCCESS
+
+
+def _run_cases_query(args: argparse.Namespace) -> int:
+    revisions = _case_store(args).list_revisions()
+    print(json.dumps({"matches": [
+        {"case_id": item.case_id, "revision_id": item.revision_id, "status": item.status.value,
+         "score": 1.0, "index_revision": item.index_revision}
+        for item in revisions[: args.top_k]
+    ]}, ensure_ascii=False))
+    return EXIT_SUCCESS
+
+
+def _run_cases_inspect(args: argparse.Namespace) -> int:
+    store = _case_store(args)
+    item = next((item for item in store.list_revisions(include_superseded=True) if item.revision_id == args.revision_id), None)
+    if item is None:
+        raise ValueError(f"unknown case revision: {args.revision_id}")
+    print(json.dumps({"case_id": item.case_id, "revision_id": item.revision_id, "status": item.status.value,
+                      "artifact_relative_path": item.artifact_relative_path}, ensure_ascii=False))
     return EXIT_SUCCESS
 
 
