@@ -8,7 +8,7 @@ def test_cli_exposes_documented_top_level_commands():
     choices = parser._subparsers._group_actions[0].choices
     assert set(choices) == {
         "search", "download", "properties", "substrates", "generate",
-        "check", "export", "convert", "sample", "filter", "db", "mcp", "config",
+        "check", "export", "convert", "sample", "filter", "db", "mcp", "config", "cases",
     }
 
 
