@@ -7,6 +7,13 @@ import os
 from pathlib import Path
 from typing import Any
 
+from .adsorption.config import AdsorptionConfig
+
+try:
+    from platformdirs import user_config_dir
+except ImportError:  # pragma: no cover - dependency is declared for installations
+    user_config_dir = None
+
 
 class ConfigError(ValueError):
     pass
@@ -15,6 +22,23 @@ class ConfigError(ValueError):
 def _is_sensitive(name: str) -> bool:
     lowered = name.lower()
     return any(token in lowered for token in ("key", "token", "secret", "password"))
+
+
+def _find_sensitive(value: Any, path: str = "") -> str | None:
+    if isinstance(value, dict):
+        for name, item in value.items():
+            current = f"{path}.{name}" if path else str(name)
+            if _is_sensitive(str(name)):
+                return current
+            found = _find_sensitive(item, current)
+            if found:
+                return found
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            found = _find_sensitive(item, f"{path}[{index}]")
+            if found:
+                return found
+    return None
 
 
 def redact(value: Any, key: str = "") -> Any:
@@ -28,11 +52,12 @@ def redact(value: Any, key: str = "") -> Any:
 
 
 class ConfigManager:
-    ALLOWED_FIELDS = {"provider", "model"}
+    ALLOWED_FIELDS = {"provider", "model", "adsorption"}
 
     def __init__(self, path: Path | None = None):
         configured = os.environ.get("LLM_MATGEN_CONFIG")
-        self.path = Path(path or configured or (Path.home() / ".config" / "llm-matgen" / "config.json"))
+        default_dir = user_config_dir("llm-matgen") if user_config_dir else str(Path.home() / ".config" / "llm-matgen")
+        self.path = Path(path or configured or (Path(default_dir) / "config.json"))
 
     def load(self) -> dict[str, Any]:
         if not self.path.exists():
@@ -43,8 +68,9 @@ class ConfigManager:
             raise ConfigError(f"failed to read configuration: {self.path}") from exc
         if not isinstance(data, dict):
             raise ConfigError("configuration root must be an object")
-        if any(_is_sensitive(str(key)) for key in data):
-            raise ConfigError("sensitive fields are not allowed in the configuration file")
+        sensitive_path = _find_sensitive(data)
+        if sensitive_path:
+            raise ConfigError(f"sensitive fields are not allowed in the configuration file: {sensitive_path}")
         return data
 
     def set(self, field: str, value: str) -> dict[str, Any]:
@@ -54,6 +80,15 @@ class ConfigManager:
             raise ConfigError(f"configuration field {field} cannot be empty")
         data = self.load()
         data[field] = value.strip()
+        self._write_atomic(data)
+        return data
+
+    def load_adsorption(self) -> AdsorptionConfig:
+        return AdsorptionConfig.model_validate(self.load().get("adsorption", {}))
+
+    def set_adsorption(self, value: AdsorptionConfig) -> dict[str, Any]:
+        data = self.load()
+        data["adsorption"] = value.model_dump(mode="json")
         self._write_atomic(data)
         return data
 
