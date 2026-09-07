@@ -24,3 +24,27 @@ def test_adsorption_generator_require_history_fails_without_history():
     inputs = AdsorptionInput(slab=_slab(), molecule=Molecule(["H"], [[0, 0, 0]]), anchor_index=1)
     with pytest.raises(ValueError, match="history"):
         AdsorptionGenerator().generate(inputs, AdsorptionParams(history_mode="require"))
+
+
+def test_adsorption_generator_enforces_atom_limit():
+    import pytest
+    from llm_matgen.generators.adsorption import AdsorptionGenerator, AdsorptionInput, AdsorptionParams
+
+    inputs = AdsorptionInput(slab=_slab(), molecule=Molecule(["H"], [[0, 0, 0]]), anchor_index=1)
+    with pytest.raises(ValueError, match="max_atoms_per_structure"):
+        AdsorptionGenerator().generate(inputs, AdsorptionParams(max_atoms_per_structure=4))
+
+
+def test_prefer_history_falls_back_to_algorithmic_when_history_candidate_is_invalid():
+    from llm_matgen.generators.adsorption import AdsorptionGenerator, AdsorptionInput, AdsorptionParams
+
+    inputs = AdsorptionInput(slab=_slab(), molecule=Molecule(["H"], [[0, 0, 0]]), anchor_index=1)
+    history = ({
+        "revision_id": "invalid-contact",
+        "fractional_site": (0.0, 0.0, 0.2),
+        "side": "top",
+        "local_adsorbate_coordinates": ((0.0, 0.0, 0.0),),
+        "local_delta": (0.0, 0.0, -2.0),
+    },)
+    result = AdsorptionGenerator(history=history).generate(inputs, AdsorptionParams(history_mode="prefer", max_structures=1))
+    assert result.generated[0].record.actual_parameters["proposal"]["source"] == "algorithmic"

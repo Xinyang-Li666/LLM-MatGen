@@ -33,6 +33,21 @@ def _covalent_radius(symbol: str) -> float:
     return _COVALENT_RADII.get(symbol, 1.25)
 
 
+def _structure_like_signature(value: Molecule | Structure | None):
+    if value is None:
+        return None
+    if isinstance(value, Structure):
+        return ("structure", structure_sha256(value))
+    distances = np.asarray(value.distance_matrix, dtype=float)
+    return (
+        "molecule",
+        tuple(str(site.specie) for site in value),
+        tuple(float(item) for item in np.round(distances, 8).ravel()),
+        int(round(float(value.charge))),
+        int(value.spin_multiplicity),
+    )
+
+
 class _AdsorptionModel(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid", frozen=True)
 
@@ -194,9 +209,9 @@ class StructureContext(_AdsorptionModel):
     vacuum_axis: int = Field(default=2, ge=0, le=2)
     notes: tuple[str, ...] = ()
     comparison_roles: tuple[str, ...] = ("clean_slab", "adsorbed", "gas_reference")
-    fixed_layers: int = 0
+    fixed_layers: int = Field(default=0, ge=0)
     surface_side: Literal["top", "bottom", "both"] = "top"
-    coverage: float | None = None
+    coverage: float | None = Field(default=None, ge=0.0, le=1.0)
 
     @field_validator("matrix")
     @classmethod
@@ -226,8 +241,12 @@ class AdsorptionGenerationResult(_AdsorptionModel):
     def combine(self, other: "AdsorptionGenerationResult") -> "AdsorptionGenerationResult":
         if self.clean_slab is None or other.clean_slab is None or structure_sha256(self.clean_slab) != structure_sha256(other.clean_slab):
             raise ValueError("cannot combine adsorption results from different slabs")
-        if self.adsorbate is None or other.adsorbate is None or repr(self.adsorbate) != repr(other.adsorbate):
+        if self.adsorbate is None or other.adsorbate is None or _structure_like_signature(self.adsorbate) != _structure_like_signature(other.adsorbate):
             raise ValueError("cannot combine adsorption results from different adsorbates")
+        if _structure_like_signature(self.gas_reference) != _structure_like_signature(other.gas_reference):
+            raise ValueError("cannot combine adsorption results with different gas references")
+        if self.retrieval_trace != other.retrieval_trace:
+            raise ValueError("cannot combine adsorption results with different retrieval traces")
         if self.structure_context != other.structure_context:
             raise ValueError("cannot combine adsorption results with different structure contexts")
         return self.model_copy(update={
@@ -245,6 +264,11 @@ class AdsorptionGenerator:
         self.history = tuple(history) if history is not None else None
 
     def generate(self, inputs: AdsorptionInput, params: AdsorptionParams) -> GenerationResult:
+        atom_count = len(inputs.slab) + len(inputs.molecule)
+        if atom_count > params.max_atoms_per_structure:
+            raise ValueError(
+                f"adsorption structure has {atom_count} atoms, exceeding max_atoms_per_structure={params.max_atoms_per_structure}"
+            )
         algorithmic = AlgorithmicProposalSource(
             inputs.slab,
             inputs.molecule if isinstance(inputs.molecule, Molecule) else Molecule(inputs.molecule.species, inputs.molecule.cart_coords),
@@ -267,9 +291,19 @@ class AdsorptionGenerator:
             )
         selected_source, fallback_reason = resolve_history(params.history_mode, history_source, algorithmic)
         explicit = tuple((f"explicit-{index:04d}", coords) for index, coords in enumerate(params.explicit_sites))
-        proposals = selected_source.iter_proposals(site_kinds=params.site_kinds, side=params.surface_side, explicit_sites=explicit or None) if selected_source is algorithmic else selected_source.iter_proposals()
+        algorithmic_proposals = algorithmic.iter_proposals(
+            site_kinds=params.site_kinds,
+            side=params.surface_side,
+            explicit_sites=explicit or None,
+        )
+        if selected_source is algorithmic:
+            proposals = algorithmic_proposals
+            secondary = None
+        else:
+            proposals = selected_source.iter_proposals()
+            secondary = algorithmic_proposals if params.history_mode == "prefer" else None
         attempts = params.max_attempts or max(params.max_structures * 20, params.max_structures)
-        candidates, audit = bounded_proposal_stream(proposals, max_attempts=attempts)
+        candidates, audit = bounded_proposal_stream(proposals, secondary, max_attempts=attempts)
         generated: list[GeneratedStructure] = []
         warnings: list[str] = []
         if fallback_reason:
@@ -291,6 +325,7 @@ class AdsorptionGenerator:
                 candidate,
                 slab_atom_count=len(inputs.slab),
                 n_layers=params.fixed_bottom_layers,
+                tolerance=float(params.layer_tolerance),
                 side="bottom",
             )
             candidate.add_site_property("selective_dynamics", list(fixed.flags))

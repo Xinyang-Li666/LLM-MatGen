@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import warnings as _warnings
 
 import numpy as np
 from pymatgen.core import Structure
@@ -44,17 +43,34 @@ def _covalent_radius(symbol: str) -> float:
     return radius if np.isfinite(radius) and radius > 0 else 1.0
 
 
-def _periodic_minimum(delta: np.ndarray, lattice: np.ndarray, *, span: int = 4) -> float:
+def _gauss_reduce_2d(first: np.ndarray, second: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Gauss-reduce two independent in-plane lattice vectors."""
+    first = np.asarray(first, dtype=float).copy()
+    second = np.asarray(second, dtype=float).copy()
+    for _ in range(64):
+        if float(np.dot(second, second)) < float(np.dot(first, first)):
+            first, second = second, first
+        coefficient = int(np.rint(float(np.dot(first, second) / np.dot(first, first))))
+        if coefficient == 0:
+            return first, second
+        second = second - coefficient * first
+    raise ValueError("surface lattice reduction did not converge")
+
+
+def _periodic_minimum(delta: np.ndarray, lattice: np.ndarray, *, span: int = 2) -> float:
     """Minimum norm after translations in the two periodic surface vectors.
 
-    A small integer neighborhood is sufficient after reducing the two
-    in-plane vectors; the range is deliberately wider than the usual 3x3
-    image check so skew cells do not silently pass a collision.
+    The search is centered on the least-squares solution in a Gauss-reduced
+    basis, so the original cell may require arbitrarily large coefficients.
     """
+    first, second = _gauss_reduce_2d(lattice[0], lattice[1])
+    basis = np.column_stack((first, second))
+    center = np.linalg.lstsq(basis, -np.asarray(delta, dtype=float), rcond=None)[0]
+    rounded = np.rint(center).astype(int)
     best = float("inf")
-    for u in range(-span, span + 1):
-        for v in range(-span, span + 1):
-            best = min(best, float(np.linalg.norm(delta + u * lattice[0] + v * lattice[1])))
+    for u in range(rounded[0] - span, rounded[0] + span + 1):
+        for v in range(rounded[1] - span, rounded[1] + span + 1):
+            best = min(best, float(np.linalg.norm(delta + u * first + v * second)))
     return best
 
 
@@ -128,12 +144,10 @@ class AdsorptionCandidateValidator:
         cell_extent = abs(float(np.dot(candidate.lattice.matrix[2], normal)))
         slab_thickness = float(np.max(slab_proj) - np.min(slab_proj)) if len(slab_proj) else 0.0
         vacuum = max(0.0, cell_extent - slab_thickness)
-        candidate_proj = coords @ normal
-        slab_min, slab_max = float(np.min(slab_proj)), float(np.max(slab_proj))
-        # Report both sides relative to the slab.  The absolute origin is not
-        # assumed; this remains useful for centered and non-centered slabs.
-        lower_gap = max(0.0, slab_min - float(np.min(candidate_proj)))
-        upper_gap = max(0.0, float(np.max(candidate_proj)) - slab_max)
+        fractional_normal = np.mod(np.asarray(candidate.frac_coords, dtype=float)[:, 2], 1.0)
+        normal_positions = fractional_normal * cell_extent
+        lower_gap = max(0.0, float(np.min(normal_positions)))
+        upper_gap = max(0.0, cell_extent - float(np.max(normal_positions)))
         measurements = {
             "vacuum": vacuum,
             "vacuum_lower": lower_gap,

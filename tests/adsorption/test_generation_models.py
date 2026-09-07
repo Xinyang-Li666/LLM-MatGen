@@ -93,3 +93,22 @@ def test_typed_adsorption_result_retains_roles_and_structure_context():
     left = AdsorptionGenerationResult(clean_slab=slab, adsorbate=molecule, structure_context=context)
     right = AdsorptionGenerationResult(clean_slab=slab.copy(), adsorbate=molecule.copy(), structure_context=context)
     assert left.combine(right).clean_slab is not None
+
+
+def test_structure_context_and_result_combine_reject_incompatible_structural_metadata():
+    from pydantic import ValidationError
+    from llm_matgen.generators.adsorption import AdsorptionGenerationResult, StructureContext
+
+    with pytest.raises(ValidationError):
+        StructureContext(matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)), coverage=1.1)
+    context = StructureContext(matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)))
+    left = AdsorptionGenerationResult(
+        clean_slab=_slab(), adsorbate=_molecule(), gas_reference=_molecule(),
+        retrieval_trace={"revision_ids": ["r1"]}, structure_context=context,
+    )
+    right = AdsorptionGenerationResult(
+        clean_slab=_slab(), adsorbate=_molecule(), gas_reference=Molecule(["H", "H"], [[0, 0, 0], [0, 0, 0.75]]),
+        retrieval_trace={"revision_ids": ["r1"]}, structure_context=context,
+    )
+    with pytest.raises(ValueError, match="gas reference"):
+        left.combine(right)
