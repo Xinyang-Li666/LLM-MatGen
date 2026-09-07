@@ -55,6 +55,7 @@ class GenerationRequest(BaseModel):
     parameters: dict[str, Any] = Field(default_factory=dict)
     export_options: ExportOptions = Field(default_factory=ExportOptions)
     limits: ExecutionLimits
+    viewer: bool = True
 
 
 @dataclass(frozen=True)
@@ -169,7 +170,7 @@ class GenerationService:
                 substrate=resolved[1].structure,
             )
             runs.append(
-                pipeline.run(generator, inputs, params, request.export_options)
+                pipeline.run(generator, inputs, params, request.export_options, viewer=request.viewer)
             )
         elif request.generator == "adsorption":
             inputs = AdsorptionInput(
@@ -178,11 +179,11 @@ class GenerationService:
                 anchor_index=input_parameters.pop("anchor_index", 1),
                 **input_parameters,
             )
-            runs.append(pipeline.run(generator, inputs, params, request.export_options))
+            runs.append(pipeline.run(generator, inputs, params, request.export_options, viewer=request.viewer))
         else:
             for item in resolved:
                 runs.append(
-                    pipeline.run(generator, item.structure, params, request.export_options)
+                    pipeline.run(generator, item.structure, params, request.export_options, viewer=request.viewer)
                 )
         for run in runs:
             if run.generation.generated_count > request.limits.max_structures:

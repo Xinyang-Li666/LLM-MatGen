@@ -56,7 +56,7 @@
 5. adsorption 不再通过 CLI 直接绕开 service/pipeline。
 6. 运行 service 测试并提交：`refactor: resolve typed generator inputs uniformly`。
 
-## Task 4：整合 CLI 且保留现有命令
+## Task 4：整合 CLI 且保留现有命令 `[completed]`
 
 **Files:**
 
