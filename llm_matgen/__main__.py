@@ -242,6 +242,84 @@ def build_parser() -> argparse.ArgumentParser:
         help="override LAMMPS type mapping; missing types default to atomic numbers",
     )
     export.set_defaults(_handler=_run_export)
+    convert = _add_leaf(commands, "convert", "convert multi-frame datasets")
+    convert_commands = convert.add_subparsers(dest="convert_command")
+    deepmd = _add_leaf(convert_commands, "deepmd", "convert DeepMD datasets to structure files")
+    deepmd.add_argument("input")
+    deepmd.add_argument("--output-root", default="output")
+    deepmd.add_argument("--format", dest="formats", action="append", choices=("poscar", "cif", "lammps-data"))
+    deepmd.add_argument("--stride", type=int, default=1)
+    deepmd.add_argument("--type-map", action="append", default=[])
+    deepmd.set_defaults(_handler=_run_convert_deepmd)
+    sample = _add_leaf(commands, "sample", "sample multi-frame trajectories")
+    sample_commands = sample.add_subparsers(dest="sample_command")
+    trajectory = _add_leaf(sample_commands, "trajectory", "sample XYZ, XDATCAR, or LAMMPS trajectories")
+    trajectory.add_argument("input")
+    trajectory.add_argument("--method", choices=("uniform", "random"), required=True)
+    trajectory.add_argument("--count", type=int, required=True)
+    trajectory.add_argument("--seed", type=int)
+    trajectory.add_argument("--input-format", choices=("extxyz", "vasp-xdatcar", "lammps-dump-text"))
+    trajectory.add_argument("--format", dest="formats", action="append", choices=("poscar", "cif", "lammps-data"))
+    trajectory.add_argument("--output-root", default="output")
+    trajectory.add_argument("--lammps-element", action="append", default=[], metavar="TYPE=ELEMENT")
+    trajectory.set_defaults(_handler=_run_sample_trajectory)
+    representative = _add_leaf(sample_commands, "representative", "select representative trajectory frames with RDF/SOAP FPS")
+    representative.add_argument("input", nargs="?")
+    representative.add_argument("--source-config")
+    representative.add_argument("--method", choices=("rdf-fps", "soap-fps"), required=True)
+    representative.add_argument("--count", type=int, required=True)
+    representative.add_argument("--allocation", choices=("proportional", "global"), default="proportional")
+    representative.add_argument("--min-distance", type=float, default=0.0)
+    representative.add_argument("--input-format", choices=("extxyz", "lammps-dump-text", "vasp-xdatcar"))
+    representative.add_argument("--output-root", default="output")
+    representative.add_argument("--cache-dir")
+    representative.add_argument("--r-min", type=float, default=0.8)
+    representative.add_argument("--r-max", type=float, default=6.0)
+    representative.add_argument("--rdf-bin-width", type=float, default=0.05)
+    representative.add_argument("--soap-r-cut", type=float, default=5.0)
+    representative.add_argument("--soap-n-max", type=int, default=6)
+    representative.add_argument("--soap-l-max", type=int, default=4)
+    representative.add_argument("--soap-sigma", type=float, default=0.5)
+    representative.set_defaults(_handler=_run_sample_representative)
+    # filter
+    filt = _add_leaf(commands, "filter", "filter multi-frame trajectory data")
+    filt_commands = filt.add_subparsers(dest="filter_command")
+    filt_traj = _add_leaf(filt_commands, "trajectory", "filter non-physical frames from an MD trajectory")
+    filt_traj.add_argument("input")
+    filt_traj.add_argument("--reference")
+    filt_traj.add_argument("--dimensions", nargs="+", default=None,
+                           choices=("overlap", "force", "coordination"))
+    filt_traj.add_argument("--checks", nargs="+", default=None,
+                           choices=("overlap", "force", "coordination", "cell", "continuity"))
+    filt_traj.add_argument("--output-root", default="output")
+    filt_traj.add_argument("--model-name", default="")
+    filt_traj.add_argument("--force-threshold", dest="force_thresholds", action="append", default=[],
+                           metavar="MODEL=VALUE",
+                           help="force ceiling per model, e.g. DPA-4=18.0")
+    filt_traj.add_argument("--force-max", type=float)
+    filt_traj.add_argument("--overlap-ratio", type=float, default=0.01)
+    filt_traj.add_argument("--overlap-scale", type=float, default=0.55)
+    filt_traj.add_argument("--overlap-floor", type=float, default=0.55)
+    filt_traj.add_argument("--coord-cutoff", type=float, default=3.5)
+    filt_traj.add_argument("--coord-group", dest="coord_groups_raw", action="append", default=[],
+                           metavar="LABEL=Z1,Z2,...",
+                           help="atomic-number groups for coordination averaging, e.g. cation=22,40,72")
+    filt_traj.add_argument("--n-iqr", type=float, default=3.0)
+    filt_traj.add_argument("--threshold-profile")
+    filt_traj.add_argument("--output-format", choices=("extxyz", "lammps-dump"), default="extxyz")
+    filt_traj.add_argument("--sample-count", type=int, default=300)
+    filt_traj.add_argument("--sample-method", choices=("uniform", "random"), default="uniform")
+    filt_traj.add_argument("--seed", type=int)
+    filt_traj.add_argument("--strict", action="store_true")
+    filt_traj.add_argument("--fail-on-anomaly", action="store_true")
+    filt_traj.add_argument("--allow-variable-composition", action="store_true")
+    filt_traj.add_argument("--assume-type-is-z", action="store_true")
+    filt_traj.add_argument("--input-format", choices=("lammps-dump-text", "extxyz", "vasp-xdatcar", "traj"))
+    filt_traj.add_argument("--lammps-element", action="append", default=[],
+                           metavar="TYPE=ELEMENT",
+                           help="map LAMMPS type IDs to atomic numbers")
+    filt_traj.set_defaults(_handler=_run_filter_trajectory)
+
     db = _add_leaf(commands, "db", "manage local cache snapshots")
     db_commands = db.add_subparsers(dest="db_command")
     db_import = _add_leaf(db_commands, "import", "import snapshot archive")
@@ -554,6 +632,186 @@ def _run_export(args: argparse.Namespace) -> int:
         )
     )
     return EXIT_SUCCESS if not failures else EXIT_PARTIAL
+
+
+def _trajectory_formats(values):
+    from llm_matgen.generators.models import OutputFormat
+    return [OutputFormat(value) for value in (values or ["poscar"])]
+
+
+def _trajectory_output_root(value: str) -> Path:
+    root = Path.cwd().resolve()
+    output = Path(value).resolve()
+    if not output.is_relative_to(root):
+        raise ValueError("output root must remain inside the current workspace")
+    return output
+
+
+def _run_convert_deepmd(args: argparse.Namespace) -> int:
+    from llm_matgen.trajectories.service import TrajectoryService
+
+    input_dir = _safe_workspace_path(args.input)
+    if args.stride <= 0:
+        raise ValueError("stride must be positive")
+    manifest = TrajectoryService().convert_deepmd(
+        input_dir, _trajectory_output_root(args.output_root), _trajectory_formats(args.formats),
+        stride=args.stride, type_map=args.type_map or None,
+    )
+    print(json.dumps({"ok": True, "manifest": str(manifest)}, ensure_ascii=False))
+    return EXIT_SUCCESS
+
+
+def _run_sample_trajectory(args: argparse.Namespace) -> int:
+    from llm_matgen.trajectories.service import TrajectoryService
+
+    manifest = TrajectoryService().sample_trajectory(
+        _safe_workspace_path(args.input), _trajectory_output_root(args.output_root),
+        args.method, args.count, seed=args.seed, input_format=args.input_format,
+        formats=_trajectory_formats(args.formats), lammps_element_map=_parse_lammps_map(args.lammps_element),
+    )
+    print(json.dumps({"ok": True, "manifest": str(manifest)}, ensure_ascii=False))
+    return EXIT_SUCCESS
+
+
+def _run_sample_representative(args: argparse.Namespace) -> int:
+    from llm_matgen.trajectories.representative.engine import RepresentativeSamplingEngine
+    from llm_matgen.trajectories.representative.models import RepresentativeSamplingRequest, SourceSpec
+    from llm_matgen.trajectories.representative.rdf import RDFDescriptor, build_hybrid_channels
+    from llm_matgen.trajectories.representative.sources import inventory_sources, iter_source_frames, load_source_config
+
+    if bool(args.input) == bool(args.source_config):
+        raise ValueError("provide exactly one of INPUT or --source-config")
+    if args.source_config:
+        specs = load_source_config(_safe_workspace_path(args.source_config))
+    else:
+        input_path = _safe_workspace_path(args.input)
+        specs = (SourceSpec(input_path.stem, input_path, args.input_format or "extxyz"),)
+    inventories = inventory_sources(specs, forbidden_atomic_numbers={7})
+    all_elements = set().union(*(inventory.atomic_numbers for inventory in inventories))
+    if args.method == "soap-fps":
+        from llm_matgen.trajectories.representative.config import SOAPConfig
+        from llm_matgen.trajectories.representative.soap import SOAPDescriptorBackend
+        descriptor = SOAPDescriptorBackend(tuple(sorted(all_elements)), SOAPConfig(
+            r_cut=args.soap_r_cut, n_max=args.soap_n_max, l_max=args.soap_l_max, sigma=args.soap_sigma,
+        ))
+    else:
+        descriptor = RDFDescriptor(
+            build_hybrid_channels(tuple(sorted(all_elements))), args.r_min, args.r_max, args.rdf_bin_width
+        )
+    request = RepresentativeSamplingRequest(
+        specs, args.method, args.count, allocation=args.allocation, min_distance=args.min_distance,
+        output_root=_trajectory_output_root(args.output_root), cache_dir=(Path(args.cache_dir) if args.cache_dir else None),
+    )
+    factories = {spec.name: (lambda spec=spec: (item.frame for item in iter_source_frames(spec))) for spec in specs}
+    counts = {inventory.source.name: inventory.frame_count for inventory in inventories}
+    result = RepresentativeSamplingEngine(request, descriptor).run_streaming(factories, counts)
+    print(json.dumps({"ok": True, "run_dir": str(result.run_dir), "selected_path": str(result.selected_path), "selected_count": result.selected_count}, ensure_ascii=False))
+    return EXIT_SUCCESS
+
+
+def _run_filter_trajectory(args: argparse.Namespace) -> int:
+    from llm_matgen.trajectories.filtering.config import FilterConfig
+    from llm_matgen.trajectories.filtering.engine import FilterEngine
+    from llm_matgen.trajectories.filtering.profiles import ThresholdProfile
+    from llm_matgen.trajectories.filtering.readers import FilterTrajectoryReader
+
+    # Parse force thresholds: MODEL=VALUE
+    force_map: dict[str, float] = {}
+    for item in args.force_thresholds:
+        try:
+            model, val = item.split("=", 1)
+            force_map[model.strip()] = float(val)
+        except ValueError as exc:
+            raise ValueError(f"invalid force threshold {item!r}; expected MODEL=VALUE") from exc
+
+    # Parse coordination groups: LABEL=Z1,Z2,...
+    coord_groups: dict[str, list[int]] = {}
+    for item in args.coord_groups_raw:
+        try:
+            label, zlist = item.split("=", 1)
+            coord_groups[label.strip()] = [int(z.strip()) for z in zlist.split(",")]
+        except ValueError as exc:
+            raise ValueError(f"invalid coord group {item!r}; expected LABEL=Z1,Z2,...") from exc
+
+    checks = tuple(args.checks or args.dimensions or ["overlap"])
+    model_name = args.model_name or Path(args.input).stem
+    force_max = args.force_max if args.force_max is not None else force_map.get(model_name)
+    config = FilterConfig(
+        checks=checks,
+        overlap_ratio=args.overlap_ratio,
+        overlap_scale=args.overlap_scale,
+        overlap_floor=args.overlap_floor,
+        coord_cutoff=args.coord_cutoff,
+        coord_groups=coord_groups if coord_groups else None,
+        coord_iqr=args.n_iqr,
+        force_max=force_max,
+        sample_count=args.sample_count,
+        sample_method=args.sample_method,
+        seed=args.seed,
+        allow_variable_composition=args.allow_variable_composition,
+        strict=args.strict,
+    )
+
+    type_map = _parse_lammps_map(args.lammps_element)
+
+    reference_path = _safe_workspace_path(args.reference) if args.reference else None
+
+    input_path = _safe_workspace_path(args.input)
+    reader_factory = lambda: FilterTrajectoryReader(
+        input_path, args.input_format, type_map,
+        assume_type_is_z=args.assume_type_is_z,
+    ).iter_frames()
+    reference_factory = None
+    if reference_path is not None:
+        reference_factory = lambda: FilterTrajectoryReader(
+            reference_path, None, type_map,
+            assume_type_is_z=args.assume_type_is_z,
+        ).iter_frames()
+    profile = None
+    if args.threshold_profile:
+        profile_path = _safe_workspace_path(args.threshold_profile)
+        profile_data = json.loads(profile_path.read_text(encoding="utf-8"))
+        profile = ThresholdProfile.from_dict(profile_data)
+    result = FilterEngine(config, profile).run(
+        reader_factory, _trajectory_output_root(args.output_root),
+        reference_factory=reference_factory, output_format=args.output_format,
+    )
+
+    print(json.dumps({
+        "ok": True,
+        "total": result.total,
+        "clean": result.clean,
+        "anomalous": result.anomalous,
+        "not_evaluated": list(result.not_evaluated),
+        "anomalous_pct": round(100 * result.anomalous / max(result.total, 1), 1),
+        "reasons": result.reasons,
+        "run_dir": str(result.run_dir),
+        "summary": str(result.summary_path),
+        "clean_path": str(result.clean_path),
+        "anomalous_path": str(result.anomalous_path),
+    }, ensure_ascii=False))
+    if args.fail_on_anomaly and result.anomalous:
+        return EXIT_PARTIAL
+    if args.strict and result.not_evaluated:
+        return EXIT_PARTIAL
+    return EXIT_SUCCESS
+
+
+# Periodic table for element name → Z lookup
+_ELEMENT_Z = {
+    "H": 1, "He": 2, "Li": 3, "Be": 4, "B": 5, "C": 6, "N": 7, "O": 8, "F": 9, "Ne": 10,
+    "Na": 11, "Mg": 12, "Al": 13, "Si": 14, "P": 15, "S": 16, "Cl": 17, "Ar": 18,
+    "K": 19, "Ca": 20, "Sc": 21, "Ti": 22, "V": 23, "Cr": 24, "Mn": 25, "Fe": 26,
+    "Co": 27, "Ni": 28, "Cu": 29, "Zn": 30, "Ga": 31, "Ge": 32, "As": 33, "Se": 34,
+    "Br": 35, "Kr": 36, "Rb": 37, "Sr": 38, "Y": 39, "Zr": 40, "Nb": 41, "Mo": 42,
+    "Tc": 43, "Ru": 44, "Rh": 45, "Pd": 46, "Ag": 47, "Cd": 48, "In": 49, "Sn": 50,
+    "Sb": 51, "Te": 52, "I": 53, "Xe": 54, "Cs": 55, "Ba": 56, "La": 57, "Ce": 58,
+    "Pr": 59, "Nd": 60, "Pm": 61, "Sm": 62, "Eu": 63, "Gd": 64, "Tb": 65, "Dy": 66,
+    "Ho": 67, "Er": 68, "Tm": 69, "Yb": 70, "Lu": 71, "Hf": 72, "Ta": 73, "W": 74,
+    "Re": 75, "Os": 76, "Ir": 77, "Pt": 78, "Au": 79, "Hg": 80, "Tl": 81, "Pb": 82,
+    "Bi": 83, "Po": 84, "At": 85, "Rn": 86, "Fr": 87, "Ra": 88, "Ac": 89, "Th": 90,
+    "Pa": 91, "U": 92, "Np": 93, "Pu": 94, "Am": 95, "Cm": 96,
+}
 
 
 def _run_config_set(args: argparse.Namespace) -> int:

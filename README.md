@@ -1,5 +1,38 @@
 # LLM-MatGen
 
+## Representative trajectory sampling
+
+The independent `rdf-fps` backend selects structurally diverse frames from
+cleaned XYZ, extxyz, VASP-XDATCAR, or LAMMPS trajectories. It combines partial
+RDF, coordination/nearest-neighbour, and cell-density features, then applies
+deterministic farthest-point sampling. Install the optional reducer with
+`python -m pip install -e ".[fps]"` when PCA is enabled.
+
+Cleaning is deliberately a separate step. FPS is a diversity sampler, not a
+physical-validity check and it does not guarantee DFT convergence, training
+quality, or publication quality. Use proportional source quotas for multi-model
+datasets; `selected.extxyz` and the JSON/JSONL audit files are written to a new
+run directory. Shared descriptor caches can be resumed and are invalidated by
+input hashes, element mappings, or descriptor settings.
+
+Example:
+
+```bash
+python -m llm_matgen sample representative trajectory.extxyz \
+  --method rdf-fps --count 5000 --allocation proportional \
+  --output-root output/tmb2
+```
+
+TMB2 source examples without machine-specific paths are in
+`examples/sampling/`. RDF-FPS and SOAP-FPS are independent backends and may be
+chained by feeding one backend's cleaned/selected extxyz into the other.
+
+SOAP-FPS requires `python -m pip install -e ".[soap]"`. It uses periodic
+DScribe SOAP, category mean/std pooling, optional PCA and the same quota/FPS/
+writer audit pipeline. CPU cost depends strongly on `r_cut`, `n_max`, `l_max`,
+atom count and frame count; benchmark a small subset before an 80k-frame run.
+Warm starts require identical species and SOAP configuration.
+
 Provider-neutral crystal-structure generation for nine generator families.
 LLM-MatGen exposes deterministic generators through CLI, Python, and MCP,
 performs lightweight structural checks, and exports POSCAR, CIF, or LAMMPS
@@ -199,3 +232,45 @@ MCP 客户端负责选择模型、管理模型凭据并把自然语言请求转�
 python -m pytest --import-mode=importlib -q
 python -m compileall -q llm_matgen integrations
 ```
+
+## 多帧数据转换与轨迹采样
+
+DeepMD 数据集可逐帧转换为 POSCAR/CIF/LAMMPS data，并在 manifest 中保留原始帧索引：
+
+```bash
+llm-matgen convert deepmd path/to/deepmd \
+  --output-root output --format poscar --stride 1
+```
+
+长轨迹支持 extended XYZ、XDATCAR 和 LAMMPS dump 的均匀或随机采样：
+
+```bash
+llm-matgen sample trajectory XDATCAR \
+  --method uniform --count 100 --format poscar --output-root samples
+llm-matgen sample trajectory production.dump \
+  --method random --count 100 --seed 42 --format cif --output-root samples
+```
+
+## MD 轨迹非物理结构审查
+
+轨迹审查使用 ASE 流式读取常见轨迹格式，默认检查数值/晶胞完整性和原子重叠，输出
+clean 与 anomalous 轨迹以及逐帧 JSONL 报告：
+
+```bash
+llm-matgen filter trajectory production.dump \
+  --lammps-element 1=Ti --lammps-element 2=B \
+  --output-root output
+```
+
+使用干净参考轨迹标定力和配位环境：
+
+```bash
+llm-matgen filter trajectory target.dump \
+  --reference clean.dump \
+  --checks overlap force coordination \
+  --output-root output
+```
+
+每次执行都会创建唯一运行目录，包含 `clean.extxyz`、`anomalous.extxyz`、
+`frame-review.jsonl`、`summary.json` 和阈值 profile。没有元素映射时，程序会提示是否将
+LAMMPS type ID 作为原子序数；自动化环境请显式使用 `--assume-type-is-z`。

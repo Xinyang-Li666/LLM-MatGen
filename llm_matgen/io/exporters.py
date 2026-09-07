@@ -112,7 +112,7 @@ class StructureExporter:
         options: ExportOptions,
     ) -> dict[str, object]:
         if fmt is OutputFormat.POSCAR:
-            Poscar(structure, sort_structure=False).write_file(
+            Poscar(structure, sort_structure=True).write_file(
                 path,
                 direct=options.poscar_direct,
             )

@@ -38,6 +38,33 @@ def test_export_poscar_and_cif_round_trip(tmp_path: Path):
         assert len(artifact.sha256) == 64
 
 
+def test_export_poscar_groups_each_element_once(tmp_path: Path):
+    from llm_matgen.generators.models import OutputFormat
+    from llm_matgen.io.exporters import ExportOptions, StructureExporter
+
+    interleaved = Structure(
+        Lattice.cubic(5.0),
+        ["Hf", "B", "O", "B", "Hf"],
+        [
+            [0.0, 0.0, 0.0],
+            [0.2, 0.2, 0.2],
+            [0.4, 0.4, 0.4],
+            [0.6, 0.6, 0.6],
+            [0.8, 0.8, 0.8],
+        ],
+    )
+
+    result = StructureExporter().export_structure(
+        interleaved,
+        "interleaved",
+        ExportOptions(formats=[OutputFormat.POSCAR], output_dir=tmp_path),
+    )
+
+    element_groups = result.artifacts[0].path.read_text(encoding="utf-8").splitlines()[5].split()
+    assert len(element_groups) == len(set(element_groups))
+    assert set(element_groups) == {"Hf", "B", "O"}
+
+
 def test_export_does_not_overwrite_and_rejects_unsafe_ids(tmp_path: Path):
     from llm_matgen.generators.models import OutputFormat
     from llm_matgen.io.exporters import ExportOptions, StructureExporter

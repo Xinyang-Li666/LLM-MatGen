@@ -1,0 +1,9 @@
+{
+  "method": "rdf-fps",
+  "allocation": "proportional",
+  "count": 5000,
+  "r_min": 0.8,
+  "r_max": 6.0,
+  "rdf_bin_width": 0.05,
+  "sources": "./tmb2-clean-sources.example.json"
+}

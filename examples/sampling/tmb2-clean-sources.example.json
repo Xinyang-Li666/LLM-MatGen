@@ -1,0 +1,7 @@
+{
+  "sources": [
+    {"name": "ALL_T", "path": "./cleaned/ALL_T.extxyz", "input_format": "extxyz", "cleaned": true},
+    {"name": "DPA-4", "path": "./cleaned/DPA-4.extxyz", "input_format": "extxyz", "cleaned": true},
+    {"name": "MatterSim", "path": "./cleaned/trajectory.extxyz", "input_format": "extxyz", "cleaned": true}
+  ]
+}
