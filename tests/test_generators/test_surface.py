@@ -96,6 +96,26 @@ def test_surface_pipeline_exports_all_formats(tmp_path):
     assert {artifact.format for artifact in result.artifacts} == set(OutputFormat)
 
 
+def test_surface_near_orthogonal_strict_pipeline_exports_all_formats(tmp_path):
+    from llm_matgen.generators.surface import SurfaceGenerator, SurfaceParams
+
+    result = GenerationPipeline(tmp_path).run(
+        SurfaceGenerator(),
+        silicon_structure(),
+        SurfaceParams(
+            miller_indices=[(0, 0, 1)],
+            min_slab_size=5.0,
+            min_vacuum_size=8.0,
+            cell_shape="near-orthogonal",
+        ),
+        ExportOptions(formats=list(OutputFormat)),
+        run_id="surface-near-orthogonal",
+    )
+
+    assert result.ok
+    assert {artifact.format for artifact in result.artifacts} == set(OutputFormat)
+
+
 def test_surface_is_public_generator_api():
     from llm_matgen.generators import SurfaceGenerator, SurfaceParams
 

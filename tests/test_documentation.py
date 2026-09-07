@@ -82,6 +82,14 @@ def test_public_docs_document_sqs_failure_and_random_fallback():
         assert "--method random" in text
 
 
+def test_surface_docs_and_llm_schema_cover_near_orthogonal_cells():
+    harness = (ROOT / "tests" / "nl-tests" / "harness.py").read_text(encoding="utf-8")
+
+    assert "near-orthogonal" in harness
+    assert "orthogonal_max_area" in harness
+    assert "orthogonal_tolerance" in harness
+
+
 def test_design_doc_does_not_advertise_missing_ask_command():
     design = (ROOT / "docs/llm-matgen-design.md").read_text(encoding="utf-8")
     assert "llm-matgen ask" not in design
