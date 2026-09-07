@@ -26,6 +26,28 @@ from llm_matgen.generators.models import GeneratedStructure, GenerationResult, P
 from llm_matgen.utils.structure import structure_sha256
 
 
+_COVALENT_RADII = {"H": 0.31, "C": 0.76, "N": 0.71, "O": 0.66, "S": 1.05, "P": 1.07}
+
+
+def _covalent_radius(symbol: str) -> float:
+    return _COVALENT_RADII.get(symbol, 1.25)
+
+
+def _structure_like_signature(value: Molecule | Structure | None):
+    if value is None:
+        return None
+    if isinstance(value, Structure):
+        return ("structure", structure_sha256(value))
+    distances = np.asarray(value.distance_matrix, dtype=float)
+    return (
+        "molecule",
+        tuple(str(site.specie) for site in value),
+        tuple(float(item) for item in np.round(distances, 8).ravel()),
+        int(round(float(value.charge))),
+        int(value.spin_multiplicity),
+    )
+
+
 class _AdsorptionModel(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid", frozen=True)
 
@@ -36,6 +58,24 @@ class AdsorptionInput(_AdsorptionModel):
     slab: Structure
     molecule: Molecule | Structure
     anchor_index: PositiveInt = Field(description="One-based atom index in the adsorbate")
+    gas_reference: Molecule | Structure | None = None
+    input_source: str = "in-memory"
+    input_structure_hash: str | None = None
+    reference_axis: tuple[float, float, float] | None = None
+    denticity: PositiveInt = 1
+    rigid: bool = True
+    charge: int | None = None
+    spin_multiplicity: PositiveInt | None = None
+
+    @field_validator("reference_axis")
+    @classmethod
+    def finite_reference_axis(cls, value):
+        if value is None:
+            return None
+        array = np.asarray(value, dtype=float)
+        if array.shape != (3,) or not np.isfinite(array).all() or np.linalg.norm(array) <= 1e-12:
+            raise ValueError("reference axis must be a non-zero finite vector")
+        return tuple(float(item) for item in array)
 
     @model_validator(mode="after")
     def validate_input(self) -> "AdsorptionInput":
@@ -46,6 +86,40 @@ class AdsorptionInput(_AdsorptionModel):
         coords = np.asarray(self.molecule.cart_coords, dtype=float)
         if not np.isfinite(coords).all():
             raise ValueError("molecule coordinates must be finite")
+        if self.denticity != 1:
+            raise ValueError("only a single-anchor adsorbate is supported")
+        if not self.rigid:
+            raise ValueError("only rigid adsorbates are supported")
+        if len(self.molecule) > 1 and self.reference_axis is None:
+            raise ValueError("multi-atom adsorbate requires reference axis")
+        molecule_charge = int(round(float(getattr(self.molecule, "charge", 0))))
+        if self.charge is None:
+            object.__setattr__(self, "charge", molecule_charge)
+        elif self.charge != molecule_charge:
+            raise ValueError("charge must match the adsorbate molecule")
+        molecule_spin = int(getattr(self.molecule, "spin_multiplicity", 1))
+        if self.spin_multiplicity is None:
+            object.__setattr__(self, "spin_multiplicity", molecule_spin)
+        elif self.spin_multiplicity != molecule_spin:
+            raise ValueError("spin multiplicity must match the adsorbate molecule")
+        if len(self.molecule) > 1:
+            adjacency = [set() for _ in range(len(self.molecule))]
+            for left in range(len(self.molecule)):
+                for right in range(left + 1, len(self.molecule)):
+                    symbols = (str(self.molecule[left].specie), str(self.molecule[right].specie))
+                    if self.molecule.get_distance(left, right) <= 1.25 * sum(_covalent_radius(symbol) for symbol in symbols):
+                        adjacency[left].add(right)
+                        adjacency[right].add(left)
+            seen: set[int] = set()
+            stack = [self.anchor_index_zero_based]
+            while stack:
+                current = stack.pop()
+                if current in seen:
+                    continue
+                seen.add(current)
+                stack.extend(adjacency[current] - seen)
+            if len(seen) != len(self.molecule):
+                raise ValueError("adsorbate bond graph must be connected")
         return self
 
     @property
@@ -65,6 +139,18 @@ class AdsorptionParams(_AdsorptionModel):
     fixed_bottom_layers: int = Field(default=0, ge=0)
     preview: bool = False
     max_attempts: PositiveInt | None = None
+    history_policy: Literal["off", "prefer", "require"] | None = None
+    site_types: tuple[str, ...] | None = None
+    explicit_sites: tuple[tuple[float, float, float], ...] = ()
+    max_proposal_attempts: PositiveInt | None = None
+    anchor_contact_window: tuple[float, float] | None = None
+    azimuths: tuple[float, ...] = (0.0,)
+    tilts: tuple[float, ...] = (0.0,)
+    rolls: tuple[float, ...] = (0.0,)
+    heights: tuple[float, ...] | None = None
+    layer_tolerance: PositiveFloat = 0.15
+    coverage: float | None = Field(default=None, gt=0.0, le=1.0)
+    min_vacuum_each_side: float = Field(default=0.0, ge=0.0)
 
     @field_validator("site_height")
     @classmethod
@@ -73,13 +159,59 @@ class AdsorptionParams(_AdsorptionModel):
             raise ValueError("site_height must be finite")
         return value
 
+    @field_validator("azimuths", "tilts", "rolls")
+    @classmethod
+    def finite_pose_set(cls, value):
+        if not value or not all(math.isfinite(float(item)) for item in value):
+            raise ValueError("pose sets must be non-empty and finite")
+        return tuple(float(item) for item in value)
 
-class DFTHandoffMatrix(_AdsorptionModel):
-    """Explicit handoff metadata so DFT setup assumptions are not implicit."""
+    @field_validator("explicit_sites")
+    @classmethod
+    def finite_explicit_sites(cls, value):
+        normalized = tuple(tuple(float(item) for item in position) for position in value)
+        if any(len(position) != 3 or not np.isfinite(position).all() for position in normalized):
+            raise ValueError("explicit Cartesian sites must contain finite triplets")
+        return normalized
+
+    @model_validator(mode="after")
+    def normalize_aliases(self):
+        if self.history_policy is not None:
+            object.__setattr__(self, "history_mode", self.history_policy)
+        if self.site_types is not None:
+            allowed = {"ontop", "top", "bridge", "hollow", "hollow4", "defect", "doped", "undercoordinated", "explicit"}
+            if not self.site_types or not set(self.site_types) <= allowed:
+                raise ValueError("site_types contains an unsupported adsorption site type")
+            object.__setattr__(self, "site_kinds", tuple("ontop" if item == "top" else item for item in self.site_types))
+        if self.max_proposal_attempts is not None:
+            if self.max_attempts is not None and self.max_attempts != self.max_proposal_attempts:
+                raise ValueError("max_attempts and max_proposal_attempts disagree")
+            object.__setattr__(self, "max_attempts", self.max_proposal_attempts)
+        if self.heights is not None:
+            if not self.heights or not all(math.isfinite(float(item)) and float(item) > 0 for item in self.heights):
+                raise ValueError("heights must be finite and positive")
+            object.__setattr__(self, "site_height", float(self.heights[0]))
+        if self.anchor_contact_window is not None:
+            lower, upper = self.anchor_contact_window
+            if not math.isfinite(lower) or not math.isfinite(upper) or not 0 < lower < upper:
+                raise ValueError("anchor contact window must be finite and increasing")
+        if self.max_attempts is not None and self.max_attempts < self.max_structures:
+            raise ValueError("max_attempts must not be below max_structures")
+        if self.max_structures > 100_000 or (self.max_attempts is not None and self.max_attempts > 1_000_000):
+            raise ValueError("adsorption generation bounds are too large")
+        return self
+
+
+class StructureContext(_AdsorptionModel):
+    """Structural roles and constraints retained with adsorption outputs."""
 
     matrix: tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]
     vacuum_axis: int = Field(default=2, ge=0, le=2)
     notes: tuple[str, ...] = ()
+    comparison_roles: tuple[str, ...] = ("clean_slab", "adsorbed", "gas_reference")
+    fixed_layers: int = Field(default=0, ge=0)
+    surface_side: Literal["top", "bottom", "both"] = "top"
+    coverage: float | None = Field(default=None, ge=0.0, le=1.0)
 
     @field_validator("matrix")
     @classmethod
@@ -97,8 +229,31 @@ class AdsorptionGenerationResult(_AdsorptionModel):
 
     generated: tuple[Structure, ...] = ()
     warnings: tuple[str, ...] = ()
-    dft_handoff: DFTHandoffMatrix | None = None
+    structure_context: StructureContext | None = None
     actual_parameters: dict[str, Any] = Field(default_factory=dict)
+    clean_slab: Structure | None = None
+    adsorbate: Molecule | Structure | None = None
+    gas_reference: Molecule | Structure | None = None
+    retrieval_trace: Any | None = None
+    proposal_audit: Any | None = None
+    validation_reports: tuple[Any, ...] = ()
+
+    def combine(self, other: "AdsorptionGenerationResult") -> "AdsorptionGenerationResult":
+        if self.clean_slab is None or other.clean_slab is None or structure_sha256(self.clean_slab) != structure_sha256(other.clean_slab):
+            raise ValueError("cannot combine adsorption results from different slabs")
+        if self.adsorbate is None or other.adsorbate is None or _structure_like_signature(self.adsorbate) != _structure_like_signature(other.adsorbate):
+            raise ValueError("cannot combine adsorption results from different adsorbates")
+        if _structure_like_signature(self.gas_reference) != _structure_like_signature(other.gas_reference):
+            raise ValueError("cannot combine adsorption results with different gas references")
+        if self.retrieval_trace != other.retrieval_trace:
+            raise ValueError("cannot combine adsorption results with different retrieval traces")
+        if self.structure_context != other.structure_context:
+            raise ValueError("cannot combine adsorption results with different structure contexts")
+        return self.model_copy(update={
+            "generated": (*self.generated, *other.generated),
+            "warnings": (*self.warnings, *other.warnings),
+            "validation_reports": (*self.validation_reports, *other.validation_reports),
+        })
 
 
 class AdsorptionGenerator:
@@ -109,11 +264,21 @@ class AdsorptionGenerator:
         self.history = tuple(history) if history is not None else None
 
     def generate(self, inputs: AdsorptionInput, params: AdsorptionParams) -> GenerationResult:
+        atom_count = len(inputs.slab) + len(inputs.molecule)
+        if atom_count > params.max_atoms_per_structure:
+            raise ValueError(
+                f"adsorption structure has {atom_count} atoms, exceeding max_atoms_per_structure={params.max_atoms_per_structure}"
+            )
         algorithmic = AlgorithmicProposalSource(
             inputs.slab,
             inputs.molecule if isinstance(inputs.molecule, Molecule) else Molecule(inputs.molecule.species, inputs.molecule.cart_coords),
             height=float(params.site_height),
             anchor_index=inputs.anchor_index_zero_based,
+            reference_axis=inputs.reference_axis or (0.0, 0.0, 1.0),
+            azimuths=params.azimuths,
+            tilts=params.tilts,
+            rolls=params.rolls,
+            heights=params.heights,
         )
         history_source = None
         if params.history_mode != "off" and self.history:
@@ -125,15 +290,33 @@ class AdsorptionGenerator:
                 anchor_index=inputs.anchor_index_zero_based,
             )
         selected_source, fallback_reason = resolve_history(params.history_mode, history_source, algorithmic)
-        proposals = selected_source.iter_proposals(site_kinds=params.site_kinds, side=params.surface_side) if selected_source is algorithmic else selected_source.iter_proposals()
+        explicit = tuple((f"explicit-{index:04d}", coords) for index, coords in enumerate(params.explicit_sites))
+        algorithmic_proposals = algorithmic.iter_proposals(
+            site_kinds=params.site_kinds,
+            side=params.surface_side,
+            explicit_sites=explicit or None,
+        )
+        if selected_source is algorithmic:
+            proposals = algorithmic_proposals
+            secondary = None
+        else:
+            proposals = selected_source.iter_proposals()
+            secondary = algorithmic_proposals if params.history_mode == "prefer" else None
         attempts = params.max_attempts or max(params.max_structures * 20, params.max_structures)
-        candidates, audit = bounded_proposal_stream(proposals, max_attempts=attempts)
+        candidates, audit = bounded_proposal_stream(proposals, secondary, max_attempts=attempts)
         generated: list[GeneratedStructure] = []
         warnings: list[str] = []
         if fallback_reason:
             warnings.append(fallback_reason)
         parent_id = structure_sha256(inputs.slab)
-        validator = AdsorptionCandidateValidator(inputs.slab, algorithmic.molecule)
+        validator = AdsorptionCandidateValidator(
+            inputs.slab,
+            algorithmic.molecule,
+            anchor_index=inputs.anchor_index_zero_based,
+            anchor_contact_window=params.anchor_contact_window,
+            max_coverage=params.coverage,
+            min_vacuum_each_side=params.min_vacuum_each_side,
+        )
         for proposal in candidates:
             species = [site.specie for site in inputs.slab] + list(algorithmic.molecule.species)
             coords = np.vstack([inputs.slab.cart_coords, proposal.adsorbate_coords])
@@ -142,6 +325,7 @@ class AdsorptionGenerator:
                 candidate,
                 slab_atom_count=len(inputs.slab),
                 n_layers=params.fixed_bottom_layers,
+                tolerance=float(params.layer_tolerance),
                 side="bottom",
             )
             candidate.add_site_property("selective_dynamics", list(fixed.flags))

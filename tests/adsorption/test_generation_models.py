@@ -38,13 +38,77 @@ def test_adsorption_params_reject_nonfinite_pose_and_unbounded_limits():
         AdsorptionParams(max_structures=0)
 
 
-def test_dft_handoff_matrix_is_explicit_and_serializable():
-    from llm_matgen.generators.adsorption import DFTHandoffMatrix
+def test_structure_context_is_explicit_and_serializable():
+    import llm_matgen.generators.adsorption as adsorption
+    from llm_matgen.generators.adsorption import StructureContext
 
-    handoff = DFTHandoffMatrix(
+    context = StructureContext(
         matrix=((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
         vacuum_axis=2,
-        notes=("vacuum and spin require user verification",),
+        fixed_layers=2,
+        surface_side="top",
+        coverage=0.25,
+        notes=("structural roles require user verification",),
     )
-    assert np.linalg.det(np.array(handoff.matrix)) == pytest.approx(1.0)
-    assert handoff.model_dump(mode="json")["vacuum_axis"] == 2
+    payload = context.model_dump(mode="json")
+    assert np.linalg.det(np.array(context.matrix)) == pytest.approx(1.0)
+    assert payload["vacuum_axis"] == 2
+    assert not hasattr(adsorption, "DFTHandoffMatrix")
+    assert {"dipole_correction", "dispersion", "magnetic_order", "hubbard_u"}.isdisjoint(payload)
+
+
+def test_multi_atom_adsorbate_requires_reference_axis_and_matching_charge_spin():
+    from llm_matgen.generators.adsorption import AdsorptionInput
+    from pydantic import ValidationError
+
+    molecule = Molecule(["O", "H"], [[0, 0, 0], [0, 0, 1]])
+    with pytest.raises(ValidationError, match="reference axis"):
+        AdsorptionInput(slab=_slab(), molecule=molecule, anchor_index=1)
+    with pytest.raises(ValidationError, match="charge"):
+        AdsorptionInput(slab=_slab(), molecule=molecule, anchor_index=1, reference_axis=(0, 0, 1), charge=1)
+    with pytest.raises(ValidationError, match="finite"):
+        AdsorptionInput(slab=_slab(), molecule=molecule, anchor_index=1, reference_axis=(0, 0, float("nan")))
+
+
+def test_adsorption_params_bound_pose_sets_and_aliases():
+    from llm_matgen.generators.adsorption import AdsorptionParams
+    from pydantic import ValidationError
+
+    params = AdsorptionParams(history_policy="prefer", site_types=("hollow4",), azimuths=(0, 90), max_structures=2, max_proposal_attempts=20)
+    assert params.history_mode == "prefer"
+    assert params.site_kinds == ("hollow4",)
+    assert params.max_attempts == 20
+    with pytest.raises(ValidationError):
+        AdsorptionParams(azimuths=(float("inf"),))
+    with pytest.raises(ValidationError):
+        AdsorptionParams(site_types=("unknown",))
+
+
+def test_typed_adsorption_result_retains_roles_and_structure_context():
+    from llm_matgen.generators.adsorption import AdsorptionGenerationResult, StructureContext
+
+    slab = _slab()
+    molecule = _molecule()
+    context = StructureContext(matrix=tuple(tuple(float(x) for x in row) for row in slab.lattice.matrix))
+    left = AdsorptionGenerationResult(clean_slab=slab, adsorbate=molecule, structure_context=context)
+    right = AdsorptionGenerationResult(clean_slab=slab.copy(), adsorbate=molecule.copy(), structure_context=context)
+    assert left.combine(right).clean_slab is not None
+
+
+def test_structure_context_and_result_combine_reject_incompatible_structural_metadata():
+    from pydantic import ValidationError
+    from llm_matgen.generators.adsorption import AdsorptionGenerationResult, StructureContext
+
+    with pytest.raises(ValidationError):
+        StructureContext(matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)), coverage=1.1)
+    context = StructureContext(matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)))
+    left = AdsorptionGenerationResult(
+        clean_slab=_slab(), adsorbate=_molecule(), gas_reference=_molecule(),
+        retrieval_trace={"revision_ids": ["r1"]}, structure_context=context,
+    )
+    right = AdsorptionGenerationResult(
+        clean_slab=_slab(), adsorbate=_molecule(), gas_reference=Molecule(["H", "H"], [[0, 0, 0], [0, 0, 0.75]]),
+        retrieval_trace={"revision_ids": ["r1"]}, structure_context=context,
+    )
+    with pytest.raises(ValueError, match="gas reference"):
+        left.combine(right)

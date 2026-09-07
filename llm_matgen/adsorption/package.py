@@ -36,7 +36,8 @@ def write_adsorption_artifacts(
     references: dict[str, Any],
     retrieval_trace: Any,
     validation: Any,
-    dft_handoff: Any,
+    structure_context: Any,
+    proposal_audit: Any | None = None,
 ) -> tuple[PackageArtifact, ...]:
     root = Path(run_dir).resolve() / "adsorption"
     root.mkdir(parents=True, exist_ok=True)
@@ -44,13 +45,16 @@ def write_adsorption_artifacts(
         "references": references,
         "retrieval": retrieval_trace,
         "validation": validation,
-        "dft_handoff": dft_handoff,
+        "structure_context": structure_context,
     }
+    if proposal_audit is not None:
+        payloads["proposal_audit"] = proposal_audit
     artifacts = []
     for kind, payload in payloads.items():
         path = root / f"{kind}.json"
         data = json.dumps(_jsonable(payload), ensure_ascii=False, sort_keys=True, indent=2) + "\n"
-        path.write_text(data, encoding="utf-8")
+        temporary = path.with_suffix(path.suffix + ".tmp")
+        temporary.write_text(data, encoding="utf-8", newline="\n")
+        temporary.replace(path)
         artifacts.append(PackageArtifact(kind, path, hashlib.sha256(path.read_bytes()).hexdigest()))
     return tuple(artifacts)
-

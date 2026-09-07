@@ -29,6 +29,7 @@ class RetrievalTrace:
     candidate_count: int
     filtered_count: int
     fallback_reason: str | None
+    revision_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -90,5 +91,5 @@ class RetrievalEngine:
                 reason = "no_match"
         return RetrievalResult(
             matches=tuple(matches),
-            trace=RetrievalTrace(len(items), len(filtered), reason),
+            trace=RetrievalTrace(len(items), len(filtered), reason, tuple(item.revision_id for item in matches)),
         )
