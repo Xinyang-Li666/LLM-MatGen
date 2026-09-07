@@ -135,7 +135,8 @@ LLM-MatGen/
 │   │   ├── interstitial.py           # InterstitialGenerator — 间隙
 │   │   ├── doping.py                 # DopingGenerator — 掺杂（prior-py 提取）
 │   │   ├── solid_solution.py         # SolidSolutionGenerator — 固溶体 (random + SQS)
-│   │   ├── surface.py                # SurfaceGenerator — 表面
+│   │   ├── surface.py                # SurfaceGenerator — 表面与近似正交晶胞
+│   │   ├── surface_cell.py            # 面内整数超胞搜索与晶胞诊断
 │   │   ├── grain_boundary.py         # GBGenerator — 晶界构建
 │   │   ├── interface.py              # InterfaceGenerator — 界面 (MP 查询 + CIB/ZSL)
 │   │   ├── stacking_fault.py         # StackingFaultGenerator — 层错
@@ -440,7 +441,7 @@ def _rate_limit(min_interval=0.3):
 | 2 | `InterstitialGenerator` | `interstitial` | 随机插入间隙原子 | DS-Gen |
 | 3 | `DopingGenerator` | `doping` | 元素替换（组合枚举） | prior-py 提取 |
 | 4 | `SolidSolutionGenerator` | `solid_solution` | 固溶体（random/SQS） | DS-Gen |
-| 5 | `SurfaceGenerator` | `surface` | Miller 晶面切面 | DS-Gen |
+| 5 | `SurfaceGenerator` | `surface` | Miller 晶面切面，可选近似正交晶胞 | DS-Gen |
 | 6 | `GBGenerator` | `grain_boundary` | 从输入结构构建晶界 | DS-Gen + pymatgen |
 | 7 | `InterfaceGenerator` | `interface` | 共格界面（CIB+ZSL） | DS-Gen |
 | 8 | `StackingFaultGenerator` | `stacking_fault` | 层错（刚性位移） | DS-Gen |

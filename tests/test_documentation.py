@@ -90,6 +90,18 @@ def test_surface_docs_and_llm_schema_cover_near_orthogonal_cells():
     assert "orthogonal_tolerance" in harness
 
 
+def test_surface_public_docs_cover_near_orthogonal_cells():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    guide = (ROOT / "docs" / "user-guide.zh-CN.md").read_text(encoding="utf-8")
+
+    assert "--cell-shape near-orthogonal" in readme
+    for term in ("near-orthogonal", "orthogonal-max-area", "orthogonal-tolerance"):
+        assert term in guide
+    assert "不保证三边等长" in guide
+    assert "不施加应变" in guide
+    assert "LAMMPS data" in guide
+
+
 def test_design_doc_does_not_advertise_missing_ask_command():
     design = (ROOT / "docs/llm-matgen-design.md").read_text(encoding="utf-8")
     assert "llm-matgen ask" not in design
