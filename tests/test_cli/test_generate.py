@@ -58,6 +58,38 @@ def test_solid_solution_exposes_sqs_iterations(tmp_path: Path, monkeypatch):
     assert request.parameters["sqs_iterations"] == 10
 
 
+def test_surface_cli_exposes_near_orthogonal_cell_options(tmp_path: Path, monkeypatch):
+    from llm_matgen.__main__ import build_generation_request, build_parser
+
+    monkeypatch.chdir(tmp_path)
+    args = build_parser().parse_args([
+        "generate", "surface", "--input", "in.cif", "--miller", "1,1,1",
+        "--slab-size", "5", "--vacuum-size", "8",
+        "--cell-shape", "near-orthogonal", "--orthogonal-max-area", "6",
+        "--orthogonal-tolerance", "0.2",
+    ])
+    request = build_generation_request(args)
+
+    assert request.parameters["cell_shape"] == "near-orthogonal"
+    assert request.parameters["orthogonal_max_area"] == 6
+    assert request.parameters["orthogonal_tolerance"] == 0.2
+
+
+def test_surface_cli_defaults_to_native_cell_options(tmp_path: Path, monkeypatch):
+    from llm_matgen.__main__ import build_generation_request, build_parser
+
+    monkeypatch.chdir(tmp_path)
+    args = build_parser().parse_args([
+        "generate", "surface", "--input", "in.cif", "--miller", "0,0,1",
+        "--slab-size", "5", "--vacuum-size", "8",
+    ])
+    request = build_generation_request(args)
+
+    assert request.parameters["cell_shape"] == "native"
+    assert request.parameters["orthogonal_max_area"] == 8
+    assert request.parameters["orthogonal_tolerance"] == 0.1
+
+
 def test_generate_rejects_output_root_escape(tmp_path: Path, monkeypatch):
     from llm_matgen.__main__ import build_generation_request, build_parser
 

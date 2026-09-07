@@ -137,6 +137,12 @@ def _configure_generators(generators) -> None:
     surface.add_argument("--vacuum-size", type=float, required=True)
     surface.add_argument("--no-center", action="store_true")
     surface.add_argument("--conventional", action="store_true")
+    surface.add_argument(
+        "--cell-shape", choices=("native", "near-orthogonal"), default="native",
+        help="surface cell representation; near-orthogonal uses an integer in-plane supercell",
+    )
+    surface.add_argument("--orthogonal-max-area", type=int, default=8)
+    surface.add_argument("--orthogonal-tolerance", type=float, default=0.1)
 
     grain = _add_leaf(generators, "grain-boundary", "generate grain boundaries")
     _add_common_generate_args(grain)
@@ -429,7 +435,9 @@ def build_generation_request(args: argparse.Namespace):
         parameters = {
             "miller_indices": args.miller, "min_slab_size": args.slab_size,
             "min_vacuum_size": args.vacuum_size, "center_slab": not args.no_center,
-            "primitive": not args.conventional,
+            "primitive": not args.conventional, "cell_shape": args.cell_shape,
+            "orthogonal_max_area": args.orthogonal_max_area,
+            "orthogonal_tolerance": args.orthogonal_tolerance,
         }
     elif name == "grain-boundary":
         parameters = {

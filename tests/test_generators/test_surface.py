@@ -101,3 +101,38 @@ def test_surface_is_public_generator_api():
 
     assert SurfaceGenerator is not None
     assert SurfaceParams is not None
+
+
+def test_surface_cell_shape_defaults_preserve_native_mode():
+    from llm_matgen.generators.surface import SurfaceParams
+
+    params = SurfaceParams(
+        miller_indices=[(0, 0, 1)],
+        min_slab_size=5.0,
+        min_vacuum_size=8.0,
+    )
+
+    assert params.cell_shape == "native"
+    assert params.orthogonal_max_area == 8
+    assert params.orthogonal_tolerance == 0.1
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"cell_shape": "cubic"},
+        {"orthogonal_max_area": 0},
+        {"orthogonal_tolerance": 0},
+    ],
+)
+def test_surface_rejects_invalid_orthogonal_options(overrides):
+    from pydantic import ValidationError
+    from llm_matgen.generators.surface import SurfaceParams
+
+    with pytest.raises(ValidationError):
+        SurfaceParams(
+            miller_indices=[(0, 0, 1)],
+            min_slab_size=5.0,
+            min_vacuum_size=8.0,
+            **overrides,
+        )

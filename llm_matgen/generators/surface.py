@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Literal
+
 import numpy as np
 from pydantic import Field, PositiveFloat, PositiveInt, field_validator
 from pymatgen.core import Structure
@@ -27,6 +29,9 @@ class SurfaceParams(BaseGenerationParams):
     center_slab: bool = True
     primitive: bool = True
     max_normal_search: PositiveInt | None = None
+    cell_shape: Literal["native", "near-orthogonal"] = "native"
+    orthogonal_max_area: PositiveInt = 8
+    orthogonal_tolerance: PositiveFloat = 0.1
 
     @field_validator("miller_indices")
     @classmethod
