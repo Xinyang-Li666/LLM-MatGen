@@ -128,7 +128,7 @@ class AdsorptionParams(_AdsorptionModel):
     site_types: tuple[str, ...] | None = None
     explicit_sites: tuple[tuple[float, float, float], ...] = ()
     max_proposal_attempts: PositiveInt | None = None
-    anchor_contact_window: tuple[float, float] = (0.75, 1.35)
+    anchor_contact_window: tuple[float, float] | None = None
     azimuths: tuple[float, ...] = (0.0,)
     tilts: tuple[float, ...] = (0.0,)
     rolls: tuple[float, ...] = (0.0,)
@@ -176,9 +176,10 @@ class AdsorptionParams(_AdsorptionModel):
             if not self.heights or not all(math.isfinite(float(item)) and float(item) > 0 for item in self.heights):
                 raise ValueError("heights must be finite and positive")
             object.__setattr__(self, "site_height", float(self.heights[0]))
-        lower, upper = self.anchor_contact_window
-        if not math.isfinite(lower) or not math.isfinite(upper) or not 0 < lower < upper:
-            raise ValueError("anchor contact window must be finite and increasing")
+        if self.anchor_contact_window is not None:
+            lower, upper = self.anchor_contact_window
+            if not math.isfinite(lower) or not math.isfinite(upper) or not 0 < lower < upper:
+                raise ValueError("anchor contact window must be finite and increasing")
         if self.max_attempts is not None and self.max_attempts < self.max_structures:
             raise ValueError("max_attempts must not be below max_structures")
         if self.max_structures > 100_000 or (self.max_attempts is not None and self.max_attempts > 1_000_000):
@@ -192,6 +193,14 @@ class DFTHandoffMatrix(_AdsorptionModel):
     matrix: tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]
     vacuum_axis: int = Field(default=2, ge=0, le=2)
     notes: tuple[str, ...] = ()
+    comparison_roles: tuple[str, ...] = ("clean_slab", "adsorbed", "gas_reference")
+    fixed_layers: int = 0
+    surface_side: Literal["top", "bottom", "both"] = "top"
+    coverage: float | None = None
+    dipole_correction: bool | None = None
+    dispersion: str | None = None
+    magnetic_order: str | None = None
+    hubbard_u: dict[str, float] = Field(default_factory=dict)
 
     @field_validator("matrix")
     @classmethod
@@ -211,6 +220,25 @@ class AdsorptionGenerationResult(_AdsorptionModel):
     warnings: tuple[str, ...] = ()
     dft_handoff: DFTHandoffMatrix | None = None
     actual_parameters: dict[str, Any] = Field(default_factory=dict)
+    clean_slab: Structure | None = None
+    adsorbate: Molecule | Structure | None = None
+    gas_reference: Molecule | Structure | None = None
+    retrieval_trace: Any | None = None
+    proposal_audit: Any | None = None
+    validation_reports: tuple[Any, ...] = ()
+
+    def combine(self, other: "AdsorptionGenerationResult") -> "AdsorptionGenerationResult":
+        if self.clean_slab is None or other.clean_slab is None or structure_sha256(self.clean_slab) != structure_sha256(other.clean_slab):
+            raise ValueError("cannot combine adsorption results from different slabs")
+        if self.adsorbate is None or other.adsorbate is None or repr(self.adsorbate) != repr(other.adsorbate):
+            raise ValueError("cannot combine adsorption results from different adsorbates")
+        if self.dft_handoff != other.dft_handoff:
+            raise ValueError("cannot combine adsorption results with different DFT handoff contracts")
+        return self.model_copy(update={
+            "generated": (*self.generated, *other.generated),
+            "warnings": (*self.warnings, *other.warnings),
+            "validation_reports": (*self.validation_reports, *other.validation_reports),
+        })
 
 
 class AdsorptionGenerator:
@@ -251,7 +279,14 @@ class AdsorptionGenerator:
         if fallback_reason:
             warnings.append(fallback_reason)
         parent_id = structure_sha256(inputs.slab)
-        validator = AdsorptionCandidateValidator(inputs.slab, algorithmic.molecule)
+        validator = AdsorptionCandidateValidator(
+            inputs.slab,
+            algorithmic.molecule,
+            anchor_index=inputs.anchor_index_zero_based,
+            anchor_contact_window=params.anchor_contact_window,
+            max_coverage=params.coverage,
+            min_vacuum_each_side=params.min_vacuum_each_side,
+        )
         for proposal in candidates:
             species = [site.specie for site in inputs.slab] + list(algorithmic.molecule.species)
             coords = np.vstack([inputs.slab.cart_coords, proposal.adsorbate_coords])

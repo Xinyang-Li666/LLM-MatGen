@@ -75,3 +75,14 @@ def test_adsorption_params_bound_pose_sets_and_aliases():
         AdsorptionParams(azimuths=(float("inf"),))
     with pytest.raises(ValidationError):
         AdsorptionParams(site_types=("unknown",))
+
+
+def test_typed_adsorption_result_retains_roles_and_handoff_contract():
+    from llm_matgen.generators.adsorption import AdsorptionGenerationResult, DFTHandoffMatrix
+
+    slab = _slab()
+    molecule = _molecule()
+    handoff = DFTHandoffMatrix(matrix=tuple(tuple(float(x) for x in row) for row in slab.lattice.matrix))
+    left = AdsorptionGenerationResult(clean_slab=slab, adsorbate=molecule, dft_handoff=handoff)
+    right = AdsorptionGenerationResult(clean_slab=slab.copy(), adsorbate=molecule.copy(), dft_handoff=handoff)
+    assert left.combine(right).clean_slab is not None

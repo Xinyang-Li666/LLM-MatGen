@@ -61,7 +61,7 @@
 4. retrieval trace 记录 index revision、候选数、匹配分量、fallback reason 和使用的 revision ID。
 5. 运行历史与检索测试，提交：`feat: audit adsorption history pose reuse`。
 
-## Task 4：强化非物理候选验证
+## Task 4：强化非物理候选验证 `[completed]`
 
 **Files:**
 
@@ -76,7 +76,7 @@
 5. 增加原子顺序、surface side、coverage、固定 flags、完全相同及对称等价候选去重。
 6. 报告继续使用稳定 code、原子索引、阈值和测量值，提交：`feat: harden adsorption geometry validation`。
 
-## Task 5：完善类型化结果和 DFT 交接
+## Task 5：完善类型化结果和 DFT 交接 `[in_progress]`
 
 **Files:**
 

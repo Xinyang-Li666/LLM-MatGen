@@ -11,8 +11,9 @@ def test_adsorption_artifact_package_writes_auditable_json_and_hash(tmp_path: Pa
         retrieval_trace={"fallback_reason": None},
         validation={"valid": True},
         dft_handoff={"vacuum_axis": 2},
+        proposal_audit={"attempted": 1, "accepted": 1},
     )
-    assert {item.kind for item in artifacts} == {"references", "retrieval", "validation", "dft_handoff"}
+    assert {item.kind for item in artifacts} == {"references", "retrieval", "validation", "dft_handoff", "proposal_audit"}
     for item in artifacts:
         assert len(item.sha256) == 64
         assert json.loads(item.path.read_text(encoding="utf-8"))

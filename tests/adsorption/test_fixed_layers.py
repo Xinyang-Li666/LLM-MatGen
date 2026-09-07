@@ -30,3 +30,10 @@ def test_apply_fixed_bottom_layers_unions_existing_flags_and_reports_warning():
     assert result.flags[3] == (True, True, True)
     assert any("both" in warning for warning in result.warnings)
 
+
+def test_apply_fixed_layers_uses_top_surface_and_keeps_adsorbate_movable():
+    from llm_matgen.adsorption.validation import apply_fixed_bottom_layers
+
+    result = apply_fixed_bottom_layers(_slab(), slab_atom_count=3, n_layers=1, tolerance=0.2, side="top")
+    assert result.flags[2] == (False, False, False)
+    assert result.flags[3] == (True, True, True)
