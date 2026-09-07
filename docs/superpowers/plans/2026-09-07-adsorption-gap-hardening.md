@@ -76,7 +76,7 @@
 5. 增加原子顺序、surface side、coverage、固定 flags、完全相同及对称等价候选去重。
 6. 报告继续使用稳定 code、原子索引、阈值和测量值，提交：`feat: harden adsorption geometry validation`。
 
-## Task 5：完善类型化结果和 DFT 交接 `[in_progress]`
+## Task 5：完善类型化结果和 DFT 交接 `[completed]`
 
 **Files:**
 
@@ -93,7 +93,7 @@
 5. artifact contributor 原子写入三个 MSON reference、validation、retrieval、proposal audit 和 handoff；强制 POSCAR/MSON，拒绝会丢失角色或固定信息的 LAMMPS data。
 6. 运行 generator/package/manifest 测试并提交：`feat: complete adsorption result and dft handoff`。
 
-## Task 6：差距补强回归验收
+## Task 6：差距补强回归验收 `[completed]`
 
 1. 运行全部 adsorption、case store、revision、pipeline、exporter 和 manifest 测试。
 2. 运行 surface 与 near-orthogonal surface 测试，确保没有被参考实现覆盖或降级。
