@@ -6,7 +6,7 @@
 
 为十类生成器提供安全离线 viewer，将 adsorption/cases/revision 接入当前 CLI、服务与 MCP，更新文档并完成可安装发布验证。
 
-## Task 1：引入受许可约束的离线 viewer 资源
+## Task 1：引入受许可约束的离线 viewer 资源 `[completed]`
 
 **Files:**
 

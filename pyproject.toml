@@ -12,6 +12,7 @@ dependencies = [
     "pymatgen>=2024",
     "mp-api>=0.5",
     "numpy>=1.24",
+    "scipy>=1.10",
     "ase>=3.22",
     "pydantic>=2.0",
     "platformdirs>=4.0",
@@ -41,3 +42,6 @@ llm-matgen = "llm_matgen.__main__:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["llm_matgen*"]
+
+[tool.setuptools.package-data]
+"llm_matgen.viewer" = ["assets/*.html", "assets/*.js", "assets/*.txt"]
