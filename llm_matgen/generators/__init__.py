@@ -20,6 +20,7 @@ from .interface import InterfaceGenerator, InterfaceInput, InterfaceParams
 from .stacking_fault import StackingFaultGenerator, StackingFaultParams
 from .dislocation import DislocationGenerator, DislocationParams
 from .adsorption import (
+    AdsorptionGenerator,
     AdsorptionGenerationResult,
     AdsorptionInput,
     AdsorptionParams,
@@ -55,6 +56,7 @@ __all__ = [
     "DislocationGenerator",
     "DislocationParams",
     "AdsorptionGenerationResult",
+    "AdsorptionGenerator",
     "AdsorptionInput",
     "AdsorptionParams",
     "DFTHandoffMatrix",
