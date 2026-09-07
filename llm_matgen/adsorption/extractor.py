@@ -44,7 +44,7 @@ class ExtractionResult:
     exact_hash: str
 
 
-def _identity(snapshot: JobSnapshot) -> str:
+def snapshot_identity(snapshot: JobSnapshot) -> str:
     payload = {
         "job_id": snapshot.job_id,
         "source": snapshot.source,
@@ -64,7 +64,7 @@ def _identity(snapshot: JobSnapshot) -> str:
 
 class CaseExtractor:
     def extract(self, snapshot: JobSnapshot) -> ExtractionResult:
-        exact_hash = _identity(snapshot)
+        exact_hash = snapshot_identity(snapshot)
         revision_id = f"{snapshot.job_id}:{exact_hash[:16]}"
         paths = tuple(item.relative_path for item in snapshot.files)
         artifacts = tuple(path for path in paths if path.upper() != "OUTCAR")
