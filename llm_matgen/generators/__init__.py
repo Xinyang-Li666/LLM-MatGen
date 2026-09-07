@@ -19,6 +19,12 @@ from .grain_boundary import GrainBoundaryGenerator, GrainBoundaryParams
 from .interface import InterfaceGenerator, InterfaceInput, InterfaceParams
 from .stacking_fault import StackingFaultGenerator, StackingFaultParams
 from .dislocation import DislocationGenerator, DislocationParams
+from .adsorption import (
+    AdsorptionGenerationResult,
+    AdsorptionInput,
+    AdsorptionParams,
+    DFTHandoffMatrix,
+)
 
 __all__ = [
     "BaseGenerationParams",
@@ -48,4 +54,8 @@ __all__ = [
     "StackingFaultParams",
     "DislocationGenerator",
     "DislocationParams",
+    "AdsorptionGenerationResult",
+    "AdsorptionInput",
+    "AdsorptionParams",
+    "DFTHandoffMatrix",
 ]
