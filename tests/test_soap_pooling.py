@@ -20,4 +20,3 @@ def test_missing_category_is_zero_and_singleton_std_is_finite():
     assert np.all(result.values[:4] == 0)
     assert result.values[4] == 4 and result.values[6] == 0
     assert result.values[-3:].tolist() == [0.0, 1.0, 0.0]
-

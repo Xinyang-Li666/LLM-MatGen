@@ -35,4 +35,3 @@ def test_runs_do_not_overwrite_and_cache_reference_is_relative(tmp_path: Path):
     assert first["run_dir"] != second["run_dir"]
     ref = json.loads((Path(first["run_dir"]) / "cache-reference.json").read_text(encoding="utf-8"))
     assert not Path(ref["cache_root"]).is_absolute()
-

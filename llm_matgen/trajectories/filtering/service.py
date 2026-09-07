@@ -45,4 +45,3 @@ class TrajectoryFilterService:
             reader_factory, Path(output_root), reference_factory=reference_factory,
             output_format=output_format,
         )
-

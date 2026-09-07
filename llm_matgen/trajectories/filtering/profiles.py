@@ -112,4 +112,3 @@ def calibrate_profile(reader_factory: Callable[[], Iterable[FilterFrame]], confi
         coordination_bounds=bounds,
         coordination_groups=groups_tuple,
     )
-

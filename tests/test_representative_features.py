@@ -36,4 +36,3 @@ def test_explicit_cutoff_has_priority_and_fallback_emits_warning():
     assert cutoff == 1.5 and warning is None
     cutoff, warning = infer_coordination_cutoff(np.array([1.0, 1.1, 1.2]), explicit=None)
     assert cutoff > 0 and warning is not None
-

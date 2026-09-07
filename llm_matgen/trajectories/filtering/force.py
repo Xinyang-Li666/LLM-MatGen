@@ -22,4 +22,3 @@ def check_force(frame: FilterFrame, threshold: float | None = None) -> Detection
         "force", "fail" if failed else "pass", "error" if failed else "info", metrics,
         ("force_exceeded",) if failed else (),
     )
-

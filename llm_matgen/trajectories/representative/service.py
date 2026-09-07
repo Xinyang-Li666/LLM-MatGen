@@ -15,4 +15,3 @@ def sample_representative(
     frames_by_source: Mapping[str, Sequence[FilterFrame]],
 ) -> RepresentativeSamplingResult:
     return RepresentativeSamplingEngine(request, descriptor).run(frames_by_source)
-

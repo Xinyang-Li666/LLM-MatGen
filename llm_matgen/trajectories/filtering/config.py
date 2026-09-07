@@ -37,4 +37,3 @@ class FilterConfig:
             raise ValueError("sample_method must be uniform or random")
         if self.force_iqr < 0 or self.force_mad < 0 or self.coord_iqr < 0:
             raise ValueError("statistical multipliers must be non-negative")
-

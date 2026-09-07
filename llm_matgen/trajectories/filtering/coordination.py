@@ -41,4 +41,3 @@ def check_coordination(
         "coordination", "fail" if reasons else "pass", "error" if reasons else "info",
         metrics, tuple(reasons),
     )
-

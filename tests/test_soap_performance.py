@@ -21,4 +21,3 @@ def test_category_pooling_scales_linearly_with_frame_count():
         timings.append(time.perf_counter() - start)
         assert result.values.size == 3 * 16 * 2 + 3
     assert timings[1] < timings[0] * 30 + 1.0
-

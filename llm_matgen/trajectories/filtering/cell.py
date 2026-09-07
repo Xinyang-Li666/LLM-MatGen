@@ -30,4 +30,3 @@ def check_cell(
         "cell", "fail" if reasons else "pass", "error" if reasons else "info",
         metrics, tuple(reasons),
     )
-

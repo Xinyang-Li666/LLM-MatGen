@@ -129,4 +129,3 @@ class DescriptorCache:
         part = path.with_suffix(path.suffix + ".part")
         part.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")), encoding="utf-8")
         os.replace(part, path)
-

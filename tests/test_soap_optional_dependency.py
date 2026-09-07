@@ -31,4 +31,3 @@ def test_dscribe_import_is_lazy_and_has_install_hint(monkeypatch):
 
     with pytest.raises(RuntimeError, match=r"llm-matgen\[soap\]"):
         SOAPDescriptorBackend((5,), SOAPConfig())
-

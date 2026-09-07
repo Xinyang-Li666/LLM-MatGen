@@ -60,4 +60,3 @@ def test_partial_chunk_is_not_complete_and_recompute_uses_new_state(tmp_path: Pa
     assert cache.completed_chunks("rdf") == ()
     recomputed = cache.recompute(fp)
     assert recomputed.digest != fp.digest
-
