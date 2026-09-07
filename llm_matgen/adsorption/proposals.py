@@ -274,15 +274,28 @@ class RetrievedProposalSource:
             if fractional is None:
                 continue
             site = np.asarray(self.slab.lattice.get_cartesian_coords(fractional), dtype=float)
-            site += np.asarray(frame.normal) * self.height
-            coords = molecule_coords + site - anchor
+            site_frame = replace(frame, origin=tuple(site.tolist()))
+            local = _value(item, "local_adsorbate_coordinates")
+            if local is not None:
+                local_array = np.asarray(local, dtype=float)
+                if local_array.shape != (len(self.molecule), 3) or not np.isfinite(local_array).all():
+                    raise ValueError("history local pose must be a finite N x 3 array")
+                delta = _value(item, "local_delta", (0.0, 0.0, 0.0))
+                delta_array = np.asarray(delta, dtype=float)
+                if delta_array.shape != (3,) or not np.isfinite(delta_array).all():
+                    raise ValueError("history local delta must be a finite triplet")
+                basis = np.vstack([frame.basis_u, frame.basis_v, frame.normal])
+                coords = local_array @ basis + site + np.asarray(frame.normal) * self.height
+                coords += delta_array @ basis
+            else:
+                coords = molecule_coords + site + np.asarray(frame.normal) * self.height - anchor
             yield AdsorptionProposal(
                 site_id=f"history:{revision_id}",
                 site_kind=str(_value(item, "site_kind", "history")),
                 side=side,
-                cartesian_site=tuple(site.tolist()),
+                cartesian_site=tuple((site + np.asarray(frame.normal) * self.height).tolist()),
                 adsorbate_coords=coords,
-                frame=frame,
+                frame=site_frame,
                 source="history",
             )
 
@@ -293,7 +306,14 @@ def resolve_history(mode: str, history_source, fallback_source):
     if mode == "off":
         return fallback_source, None
     if history_source is not None:
-        return history_source, None
+        try:
+            resolved = history_source() if callable(history_source) else history_source
+        except Exception as exc:
+            if mode == "require":
+                raise ValueError(f"history required but store unavailable: {exc}") from exc
+            return fallback_source, f"history store unavailable; fallback to algorithmic proposals ({type(exc).__name__})"
+        if resolved is not None:
+            return resolved, None
     if mode == "require":
         raise ValueError("history proposals are required but unavailable")
     return fallback_source, "history unavailable; fallback to algorithmic proposals"

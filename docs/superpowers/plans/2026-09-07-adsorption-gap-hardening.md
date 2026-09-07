@@ -46,7 +46,7 @@
 5. 将候选流改为惰性双源预算：历史与算法源均有尝试机会，达到 `max_attempts` 或 `max_structures` 立即停止。
 6. 运行 proposal/contract 测试并提交：`feat: add rigid adsorption poses and extended sites`。
 
-## Task 3：强化历史姿态解析与回退审计
+## Task 3：强化历史姿态解析与回退审计 `[completed]`
 
 **Files:**
 
