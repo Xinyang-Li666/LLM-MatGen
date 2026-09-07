@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 import os
-import secrets
 import sqlite3
+import uuid
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -73,19 +73,19 @@ class AdsorptionCaseStore:
 
     @contextmanager
     def scan_lock(self):
-        token = secrets.token_hex(16)
+        lease_id = uuid.uuid4().hex
         try:
             descriptor = os.open(self.lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError as exc:
             raise ScanLockedError("scan already active") from exc
         try:
-            os.write(descriptor, json.dumps({"token": token}).encode())
+            os.write(descriptor, json.dumps({"lease_id": lease_id}).encode())
             os.close(descriptor)
             yield
         finally:
             try:
                 payload = json.loads(self.lock_path.read_text(encoding="utf-8"))
-                if payload.get("token") == token:
+                if payload.get("lease_id") == lease_id:
                     self.lock_path.unlink(missing_ok=True)
             except (OSError, json.JSONDecodeError):
                 pass
@@ -95,8 +95,8 @@ class AdsorptionCaseStore:
 
     def scan(self, source, extractor) -> int:
         with self.scan_lock():
-            token = secrets.token_hex(8)
-            stage = self.staging_root / token
+            stage_id = uuid.uuid4().hex[:16]
+            stage = self.staging_root / stage_id
             stage.mkdir()
             try:
                 with self._open() as connection:
