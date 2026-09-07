@@ -40,7 +40,7 @@
 5. 运行 pipeline 和所有 generator export 测试。
 6. 提交：`feat: generate one viewer per structure run`。
 
-## Task 3：扩展统一服务的类型化输入
+## Task 3：扩展统一服务的类型化输入 `[completed]`
 
 **Files:**
 
