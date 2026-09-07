@@ -426,10 +426,12 @@ manifest 新增可选字段，不破坏旧 manifest：
 - `retrieval_trace`；
 - `proposal_audit`；
 - `adsorption_validation`；
-- `dft_handoff`；
+- `structure_context`：仅保存晶胞、真空方向、结构角色、固定层、覆盖度和表面侧；
 - `reference_artifacts`；
 - `viewer` artifact；
 - fixed-layer policy 和 pose transform。
+
+`structure_context` 是结构生成结果的上下文，不是计算任务描述。项目不得在此保存或推荐 INCAR、赝势、KPOINTS、泛函、偶极修正、色散修正、磁序或 Hubbard U，也不得据此提交或运行任何电子结构计算。
 
 ## 13. 人工修订追溯
 

@@ -24,7 +24,7 @@ from .adsorption import (
     AdsorptionGenerationResult,
     AdsorptionInput,
     AdsorptionParams,
-    DFTHandoffMatrix,
+    StructureContext,
 )
 
 __all__ = [
@@ -59,5 +59,5 @@ __all__ = [
     "AdsorptionGenerator",
     "AdsorptionInput",
     "AdsorptionParams",
-    "DFTHandoffMatrix",
+    "StructureContext",
 ]

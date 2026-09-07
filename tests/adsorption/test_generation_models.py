@@ -38,16 +38,23 @@ def test_adsorption_params_reject_nonfinite_pose_and_unbounded_limits():
         AdsorptionParams(max_structures=0)
 
 
-def test_dft_handoff_matrix_is_explicit_and_serializable():
-    from llm_matgen.generators.adsorption import DFTHandoffMatrix
+def test_structure_context_is_explicit_and_serializable():
+    import llm_matgen.generators.adsorption as adsorption
+    from llm_matgen.generators.adsorption import StructureContext
 
-    handoff = DFTHandoffMatrix(
+    context = StructureContext(
         matrix=((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
         vacuum_axis=2,
-        notes=("vacuum and spin require user verification",),
+        fixed_layers=2,
+        surface_side="top",
+        coverage=0.25,
+        notes=("structural roles require user verification",),
     )
-    assert np.linalg.det(np.array(handoff.matrix)) == pytest.approx(1.0)
-    assert handoff.model_dump(mode="json")["vacuum_axis"] == 2
+    payload = context.model_dump(mode="json")
+    assert np.linalg.det(np.array(context.matrix)) == pytest.approx(1.0)
+    assert payload["vacuum_axis"] == 2
+    assert not hasattr(adsorption, "DFTHandoffMatrix")
+    assert {"dipole_correction", "dispersion", "magnetic_order", "hubbard_u"}.isdisjoint(payload)
 
 
 def test_multi_atom_adsorbate_requires_reference_axis_and_matching_charge_spin():
@@ -77,12 +84,12 @@ def test_adsorption_params_bound_pose_sets_and_aliases():
         AdsorptionParams(site_types=("unknown",))
 
 
-def test_typed_adsorption_result_retains_roles_and_handoff_contract():
-    from llm_matgen.generators.adsorption import AdsorptionGenerationResult, DFTHandoffMatrix
+def test_typed_adsorption_result_retains_roles_and_structure_context():
+    from llm_matgen.generators.adsorption import AdsorptionGenerationResult, StructureContext
 
     slab = _slab()
     molecule = _molecule()
-    handoff = DFTHandoffMatrix(matrix=tuple(tuple(float(x) for x in row) for row in slab.lattice.matrix))
-    left = AdsorptionGenerationResult(clean_slab=slab, adsorbate=molecule, dft_handoff=handoff)
-    right = AdsorptionGenerationResult(clean_slab=slab.copy(), adsorbate=molecule.copy(), dft_handoff=handoff)
+    context = StructureContext(matrix=tuple(tuple(float(x) for x in row) for row in slab.lattice.matrix))
+    left = AdsorptionGenerationResult(clean_slab=slab, adsorbate=molecule, structure_context=context)
+    right = AdsorptionGenerationResult(clean_slab=slab.copy(), adsorbate=molecule.copy(), structure_context=context)
     assert left.combine(right).clean_slab is not None

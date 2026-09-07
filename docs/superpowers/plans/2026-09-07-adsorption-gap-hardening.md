@@ -4,7 +4,7 @@
 
 ## 目标
 
-在进入离线 viewer 与发布整合前，补齐当前 adsorption 生成器在多原子姿态、位点集合、斜晶格验证、历史审计和 DFT 交接方面的差距，同时保持当前公共接口的可迁移性和确定性。
+在进入离线 viewer 与发布整合前，补齐当前 adsorption 生成器在多原子姿态、位点集合、斜晶格验证、历史审计和结构上下文方面的差距，同时保持当前公共接口的可迁移性和确定性。
 
 ## 明确保留的主线约束
 
@@ -76,7 +76,7 @@
 5. 增加原子顺序、surface side、coverage、固定 flags、完全相同及对称等价候选去重。
 6. 报告继续使用稳定 code、原子索引、阈值和测量值，提交：`feat: harden adsorption geometry validation`。
 
-## Task 5：完善类型化结果和 DFT 交接 `[completed]`
+## Task 5：完善类型化结果和结构上下文 `[completed]`
 
 **Files:**
 
@@ -86,12 +86,12 @@
 - Modify: `tests/test_generators/test_adsorption.py`
 - Modify: `tests/adsorption/test_package.py`
 
-1. 写失败测试要求结果保留 clean slab、adsorbate、gas reference、retrieval trace、proposal audit、validation reports 和 DFT handoff。
-2. 用户 gas reference 优先；缺省时生成有限周期盒，并保留 charge/spin 与真空仍需用户确认的说明。
-3. DFT handoff 明确 clean slab/adsorbed/gas comparison、固定层、coverage、sidedness、dipole、dispersion、magnetism 和 +U 敏感性；不得包含能量或自动计算行为。
-4. `combine()` 仅允许相同 slab、adsorbate、gas reference、retrieval 和 DFT 契约的结果合并。
-5. artifact contributor 原子写入三个 MSON reference、validation、retrieval、proposal audit 和 handoff；强制 POSCAR/MSON，拒绝会丢失角色或固定信息的 LAMMPS data。
-6. 运行 generator/package/manifest 测试并提交：`feat: complete adsorption result and dft handoff`。
+1. 写失败测试要求结果保留 clean slab、adsorbate、gas reference、retrieval trace、proposal audit、validation reports 和 `StructureContext`。
+2. 用户 gas reference 优先；缺省时只生成结构表示，并保留 charge/spin 与结构角色供用户确认。
+3. `StructureContext` 仅记录晶胞、真空方向、clean slab/adsorbed/gas reference 角色、固定层、coverage 和 sidedness；不得包含计算参数、能量或自动计算行为。
+4. `combine()` 仅允许相同 slab、adsorbate、gas reference、retrieval 和结构上下文的结果合并。
+5. artifact contributor 原子写入三个 MSON reference、validation、retrieval、proposal audit 和 `structure_context.json`；强制 POSCAR/MSON，拒绝会丢失角色或固定信息的 LAMMPS data。
+6. 运行 generator/package/manifest 测试并提交：`refactor: replace dft handoff with structure context`。
 
 ## Task 6：差距补强回归验收 `[completed]`
 

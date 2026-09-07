@@ -187,8 +187,8 @@ class AdsorptionParams(_AdsorptionModel):
         return self
 
 
-class DFTHandoffMatrix(_AdsorptionModel):
-    """Explicit handoff metadata so DFT setup assumptions are not implicit."""
+class StructureContext(_AdsorptionModel):
+    """Structural roles and constraints retained with adsorption outputs."""
 
     matrix: tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]
     vacuum_axis: int = Field(default=2, ge=0, le=2)
@@ -197,10 +197,6 @@ class DFTHandoffMatrix(_AdsorptionModel):
     fixed_layers: int = 0
     surface_side: Literal["top", "bottom", "both"] = "top"
     coverage: float | None = None
-    dipole_correction: bool | None = None
-    dispersion: str | None = None
-    magnetic_order: str | None = None
-    hubbard_u: dict[str, float] = Field(default_factory=dict)
 
     @field_validator("matrix")
     @classmethod
@@ -218,7 +214,7 @@ class AdsorptionGenerationResult(_AdsorptionModel):
 
     generated: tuple[Structure, ...] = ()
     warnings: tuple[str, ...] = ()
-    dft_handoff: DFTHandoffMatrix | None = None
+    structure_context: StructureContext | None = None
     actual_parameters: dict[str, Any] = Field(default_factory=dict)
     clean_slab: Structure | None = None
     adsorbate: Molecule | Structure | None = None
@@ -232,8 +228,8 @@ class AdsorptionGenerationResult(_AdsorptionModel):
             raise ValueError("cannot combine adsorption results from different slabs")
         if self.adsorbate is None or other.adsorbate is None or repr(self.adsorbate) != repr(other.adsorbate):
             raise ValueError("cannot combine adsorption results from different adsorbates")
-        if self.dft_handoff != other.dft_handoff:
-            raise ValueError("cannot combine adsorption results with different DFT handoff contracts")
+        if self.structure_context != other.structure_context:
+            raise ValueError("cannot combine adsorption results with different structure contexts")
         return self.model_copy(update={
             "generated": (*self.generated, *other.generated),
             "warnings": (*self.warnings, *other.warnings),

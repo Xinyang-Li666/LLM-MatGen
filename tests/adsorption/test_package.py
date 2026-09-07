@@ -10,10 +10,10 @@ def test_adsorption_artifact_package_writes_auditable_json_and_hash(tmp_path: Pa
         references={"slab": {"formula": "Cu4"}, "molecule": {"formula": "H2"}, "parent": {"id": "p1"}},
         retrieval_trace={"fallback_reason": None},
         validation={"valid": True},
-        dft_handoff={"vacuum_axis": 2},
+        structure_context={"vacuum_axis": 2},
         proposal_audit={"attempted": 1, "accepted": 1},
     )
-    assert {item.kind for item in artifacts} == {"references", "retrieval", "validation", "dft_handoff", "proposal_audit"}
+    assert {item.kind for item in artifacts} == {"references", "retrieval", "validation", "structure_context", "proposal_audit"}
     for item in artifacts:
         assert len(item.sha256) == 64
         assert json.loads(item.path.read_text(encoding="utf-8"))
@@ -31,7 +31,7 @@ def test_pipeline_accepts_narrow_artifact_contributor(tmp_path: Path):
 
     seen = []
     def contributor(run_dir, input_structure, generation):
-        result = write_adsorption_artifacts(run_dir, references={"input": "ok"}, retrieval_trace={}, validation={}, dft_handoff={})
+        result = write_adsorption_artifacts(run_dir, references={"input": "ok"}, retrieval_trace={}, validation={}, structure_context={})
         seen.extend(result)
         return result
 

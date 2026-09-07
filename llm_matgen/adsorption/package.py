@@ -36,7 +36,7 @@ def write_adsorption_artifacts(
     references: dict[str, Any],
     retrieval_trace: Any,
     validation: Any,
-    dft_handoff: Any,
+    structure_context: Any,
     proposal_audit: Any | None = None,
 ) -> tuple[PackageArtifact, ...]:
     root = Path(run_dir).resolve() / "adsorption"
@@ -45,7 +45,7 @@ def write_adsorption_artifacts(
         "references": references,
         "retrieval": retrieval_trace,
         "validation": validation,
-        "dft_handoff": dft_handoff,
+        "structure_context": structure_context,
     }
     if proposal_audit is not None:
         payloads["proposal_audit"] = proposal_audit
