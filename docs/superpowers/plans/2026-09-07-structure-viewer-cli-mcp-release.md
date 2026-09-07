@@ -24,7 +24,7 @@
 5. 将 assets 加入 setuptools package-data 和 sdist manifest。
 6. 运行 viewer/package 测试并提交：`feat: add licensed offline structure viewer`。
 
-## Task 2：把 viewer 接入统一 pipeline
+## Task 2：把 viewer 接入统一 pipeline `[completed]`
 
 **Files:**
 
