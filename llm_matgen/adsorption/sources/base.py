@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
+from typing import Any
 
 
 class CaseSourceError(ValueError):
@@ -23,6 +24,7 @@ class JobSnapshot:
     job_id: str
     source: str
     files: tuple[RemoteFileSnapshot, ...]
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class CaseSource(Protocol):
