@@ -10,7 +10,7 @@
 
 ### 1.1 项目定义
 
-**LLM-MatGen**（LLM-driven Material Structure Generation）是一个 LLM 无关的 CLI + Python API + MCP 工具平台，用自然语言驱动晶体结构获取、九类结构生成、轻量格式与几何检查以及多格式导出。确定性的材料结构操作由 Python 核心库执行，LLM 只负责理解意图、组织参数和编排工具。
+**LLM-MatGen**（LLM-driven Material Structure Generation）是一个 LLM 无关的 CLI + Python API + MCP 工具平台，用自然语言驱动晶体结构获取、十类结构生成、轻量格式与几何检查以及多格式导出。确定性的材料结构操作由 Python 核心库执行，LLM 只负责理解意图、组织参数和编排工具。
 
 ### 1.2 产品责任边界
 

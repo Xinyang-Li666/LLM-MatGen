@@ -104,7 +104,7 @@
 4. 添加 history off/prefer/require 示例和失败提示。
 5. 运行文档/harness 测试并提交：`docs: teach llm clients the adsorption workflow`。
 
-## Task 7：更新公共文档和发布安全规则
+## Task 7：更新公共文档和发布安全规则 `[completed]`
 
 **Files:**
 

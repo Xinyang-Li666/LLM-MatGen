@@ -32,7 +32,7 @@ python -m llm_matgen sample representative trajectory.extxyz \
 也不承诺 DFT 收敛、训练质量或发表质量。SOAP-FPS 与 RDF-FPS 是两个完全
 独立但可以串联的后端。
 
-LLM-MatGen 用于生成材料晶体结构，提供命令行、Python 和 MCP 接口，覆盖九类结构生成器。程序默认执行轻量检查，并可导出 POSCAR、CIF 和 LAMMPS data。
+LLM-MatGen 用于生成材料晶体结构，提供命令行、Python 和 MCP 接口，覆盖十类结构生成器。程序默认执行轻量检查，并可导出 POSCAR、CIF 和 LAMMPS data；生成运行还可产生离线 viewer。
 
 本项目只负责结构生成与基础几何检查。用户需要自行完成结构弛豫、能量与稳定性计算，并判断结构是否适合实验、工程应用或学术发表。
 
@@ -86,7 +86,7 @@ python -m llm_matgen --help
 | `llm-matgen download` | 下载 Materials Project 结构 |
 | `llm-matgen properties` | 查询 Materials Project 性质 |
 | `llm-matgen substrates` | 查询与薄膜结构匹配的基底候选 |
-| `llm-matgen generate` | 使用九类生成器构造结构 |
+| `llm-matgen generate` | 使用十类生成器构造结构 |
 | `llm-matgen check` | 对结构执行轻量检查 |
 | `llm-matgen export` | 转换结构文件格式 |
 | `llm-matgen db` | 导入、导出或查询本地快照 |
@@ -161,7 +161,19 @@ output/
 
 同一目录中已有同名运行或 manifest 时，程序不会静默覆盖。
 
-## 3. 九类生成器
+## 3. 十类生成器
+
+### 3.1 表面与吸附
+
+表面生成会保留每个 termination 的候选和元数据，不自动替用户选择终止面。
+吸附命令接收已准备好的 slab 与吸附物文件；自然语言客户端也可以先调用
+`generate_surface`，让用户选择候选后再调用 `generate_adsorption`。多原子吸附物
+需要一基于 1 的 `anchor_index` 和 `reference_axis`。`history_policy` 可取
+`off`、`prefer` 或 `require`。
+
+案例状态、查询和 revision v2 导入可通过 CLI/MCP 使用；MCP 不暴露远程案例扫描。
+每个成功生成运行默认写出离线 `viewer.html`，它仅用于查看候选结构，不代表弛豫或
+发表质量。
 
 参数中的三维整数或浮点矢量均使用逗号分隔，例如 `1,1,1`；二维坐标写作 `0.5,0.5`。
 
