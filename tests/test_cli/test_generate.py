@@ -13,11 +13,12 @@ CASES = [
     ("interface", ["--film", "film.cif", "--substrate", "sub.cif", "--film-miller", "0,0,1", "--substrate-miller", "0,0,1", "--film-thickness", "5", "--substrate-thickness", "5", "--vacuum-thickness", "8", "--gap", "2"]),
     ("stacking-fault", ["--input", "in.cif", "--plane", "0,0,1", "--slip-vector", "0.1,0,0"]),
     ("dislocation", ["--input", "in.cif", "--line-direction", "0,0,1", "--burgers-vector", "0,0,1", "--slip-plane", "1,0,0", "--character", "screw", "--core-position", "0.5,0.5", "--radius", "10", "--poisson-ratio", "0.3"]),
+    ("adsorption", ["--slab", "slab.cif", "--adsorbate", "adsorbate.xyz", "--anchor-index", "1", "--site-type", "top"]),
 ]
 
 
 @pytest.mark.parametrize("name,arguments", CASES)
-def test_nine_generate_commands_parse_into_requests(tmp_path: Path, monkeypatch, name, arguments):
+def test_ten_generate_commands_parse_into_requests(tmp_path: Path, monkeypatch, name, arguments):
     from llm_matgen.__main__ import build_generation_request, build_parser
 
     monkeypatch.chdir(tmp_path)
@@ -42,6 +43,22 @@ def test_generate_parses_percent_seed_and_defaults_to_poscar(tmp_path: Path, mon
     assert request.parameters["concentration"] == 0.05
     assert request.parameters["seed"] == 7
     assert [item.value for item in request.export_options.formats] == ["poscar"]
+
+
+def test_adsorption_request_and_viewer_flags_are_typed(tmp_path: Path, monkeypatch):
+    from llm_matgen.__main__ import build_generation_request, build_parser
+
+    monkeypatch.chdir(tmp_path)
+    args = build_parser().parse_args([
+        "generate", "adsorption", "--slab", "slab.cif", "--adsorbate", "OH.xyz",
+        "--anchor-index", "1", "--reference-axis", "0,0,1", "--site-type", "top",
+        "--site-type", "bridge", "--no-viewer",
+    ])
+    request = build_generation_request(args)
+    assert request.input_refs == ["slab.cif", "OH.xyz"]
+    assert request.parameters["anchor_index"] == 1
+    assert request.parameters["site_types"] == ["top", "bridge"]
+    assert request.viewer is False
 
 
 def test_solid_solution_exposes_sqs_iterations(tmp_path: Path, monkeypatch):

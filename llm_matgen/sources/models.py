@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict
-from pymatgen.core import Structure
+from pymatgen.core import Molecule, Structure
 
 
 class SourceStructure(BaseModel):
@@ -23,5 +23,19 @@ class SourceStructure(BaseModel):
     structure: Structure
 
 
+class SourceMolecule(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
+
+    artifact_id: str
+    source_kind: Literal["local", "materials-project"]
+    source_reference: str
+    molecule_hash: str
+    retrieved_at: datetime
+    local_path: Path | None = None
+    molecule: Molecule
+
+
 class StructureSource(Protocol):
     def get(self, reference: str) -> SourceStructure: ...
+
+    def get_molecule(self, reference: str) -> SourceMolecule: ...

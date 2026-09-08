@@ -33,14 +33,15 @@ writer audit pipeline. CPU cost depends strongly on `r_cut`, `n_max`, `l_max`,
 atom count and frame count; benchmark a small subset before an 80k-frame run.
 Warm starts require identical species and SOAP configuration.
 
-Provider-neutral crystal-structure generation for nine generator families.
+Provider-neutral crystal-structure generation for ten generator families,
+including surface adsorption, audited case reuse, and offline structure viewers.
 LLM-MatGen exposes deterministic generators through CLI, Python, and MCP,
 performs lightweight structural checks, and exports POSCAR, CIF, or LAMMPS
 data files.
 
 LLM-MatGen 是一个由任意兼容客户端驱动的材料晶体结构生成工具包。项目负责生成结构、记录参数与来源并执行默认轻量检查；模型与凭据由外部客户端管理。
 
-> 当前版本：`0.1.0`。生成结果不代表结构已经完成弛豫，也不保证热力学稳定性、动力学稳定性、可合成性或发表质量。
+> 当前版本：`0.2.0-rc.1`。生成结果不代表结构已经完成弛豫，也不保证热力学稳定性、动力学稳定性、可合成性或发表质量。
 
 ## 功能
 
@@ -55,6 +56,7 @@ LLM-MatGen 是一个由任意兼容客户端驱动的材料晶体结构生成工
 | 界面   | `interface`      | 匹配薄膜和基底并构造界面                        |
 | 层错   | `stacking-fault` | 按滑移面和位移矢量生成层错                       |
 | 位错   | `dislocation`    | 使用各向同性弹性位移场生成 edge、screw 或 mixed 位错 |
+| 吸附   | `adsorption`     | 将刚性吸附物放置到用户选定的 slab 候选上 |
 
 支持读取常见晶体结构文件，并可输出：
 
@@ -117,7 +119,7 @@ python -m llm_matgen --help
 | `llm-matgen download` | 下载 Materials Project 结构 |
 | `llm-matgen properties` | 查询材料性质 |
 | `llm-matgen substrates` | 查询薄膜结构对应的基底候选 |
-| `llm-matgen generate` | 使用九类生成器构造结构 |
+| `llm-matgen generate` | 使用十类生成器构造结构 |
 | `llm-matgen check` | 执行轻量结构检查 |
 | `llm-matgen export` | 转换 POSCAR、CIF 或 LAMMPS data |
 | `llm-matgen db` | 管理本地数据库快照 |
@@ -196,7 +198,13 @@ llm-matgen mcp --output-root output
 
 MCP 客户端负责选择模型、管理模型凭据并把自然语言请求转换为工具调用。LLM-MatGen 只提供确定性的结构生成、查询、检查和导出工具，因此不绑定特定模型厂商。
 
-九类自然语言工作流示例见 [自然语言工作流](docs/examples/natural-language-workflows.md)，MCP 接口说明见 [MCP 文档](docs/mcp.md)。
+自然语言工作流示例见 [自然语言工作流](docs/examples/natural-language-workflows.md)，MCP 接口说明见 [MCP 文档](docs/mcp.md)。
+
+表面吸附分两步：先生成并返回所有 surface termination 候选，用户选择
+termination 后再调用 adsorption。每次生成默认创建离线 `viewer.html`，可用
+`--no-viewer` 关闭。案例库支持 `history_policy=off/prefer/require`，修订导入使用
+revision v2 sidecar；MCP 只提供状态、查询和检查，不允许模型触发案例扫描。
+这些功能仍然只负责结构生成与审计记录，不执行 DFT、弛豫或稳定性判定。
 
 ## Python 接口
 

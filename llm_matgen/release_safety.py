@@ -23,6 +23,7 @@ _PRIVATE_KEY = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")
 _WINDOWS_USER_PATH = re.compile(r"(?i)\b[A-Z]:\\Users\\([^\\/\s]+)(?:\\|/)")
 _UNIX_USER_PATH = re.compile(r"/(?:Users|home)/([^/\s]+)(?:/|$)")
 _WINDOWS_ESCAPED_PATH = re.compile(r'''["'][A-Z]:(?:\\{2})+''')
+_SSH_WRAPPER = re.compile(r"(?im)^\s*(?:proxycommand|remotecommand)\s+|\bssh\s+[^\r\n]*(?:-file|-wrapper)\b")
 
 
 @dataclass(frozen=True)
@@ -80,6 +81,8 @@ def scan_text(path: Path, text: str) -> list[Finding]:
         rules.add("personal-absolute-path")
     if _WINDOWS_ESCAPED_PATH.search(text):
         rules.add("personal-absolute-path")
+    if _SSH_WRAPPER.search(text):
+        rules.add("ssh-wrapper")
 
     return [Finding(path=path, rule=rule) for rule in sorted(rules)]
 

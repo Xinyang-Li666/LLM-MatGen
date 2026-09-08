@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from urllib.parse import unquote
 
 import numpy as np
 from ase.io import read
@@ -18,6 +19,8 @@ def test_writes_auditable_extxyz_and_optional_formats(tmp_path: Path):
     selected = Path(result["selected_path"])
     atoms = read(selected, index=0)
     assert len(atoms) == 2
+    assert atoms.info["source_name_encoding"] == "percent-utf8"
+    assert unquote(atoms.info["source_name"]) == "源一"
     rows = [json.loads(line) for line in Path(result["selection_path"]).read_text(encoding="utf-8").splitlines()]
     assert rows[0]["source_name"] == "源一" and rows[0]["source_index"] == 3
     assert Path(result["summary_path"]).read_text(encoding="utf-8")

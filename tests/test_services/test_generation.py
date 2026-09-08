@@ -55,12 +55,12 @@ def test_generation_service_runs_source_generator_check_export_and_manifest(tmp_
     assert result.runs[0].manifest_path.exists()
 
 
-def test_generation_registry_contains_exactly_nine_stable_names():
+def test_generation_registry_contains_ten_stable_names():
     from llm_matgen.services.generation import default_generator_registry
 
     assert set(default_generator_registry()) == {
         "vacancy", "interstitial", "doping", "solid-solution", "surface",
-        "grain-boundary", "interface", "stacking-fault", "dislocation",
+        "grain-boundary", "interface", "stacking-fault", "dislocation", "adsorption",
     }
 
 

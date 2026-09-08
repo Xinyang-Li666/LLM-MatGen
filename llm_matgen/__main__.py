@@ -7,6 +7,8 @@ import json
 import sys
 from pathlib import Path
 
+from llm_matgen import __version__
+
 EXIT_SUCCESS = 0
 EXIT_PARAMETER = 2
 EXIT_PARTIAL = 3
@@ -22,6 +24,7 @@ GENERATOR_NAMES = (
     "interface",
     "stacking-fault",
     "dislocation",
+    "adsorption",
 )
 
 
@@ -68,10 +71,13 @@ def _fraction(value: str) -> float:
         raise argparse.ArgumentTypeError("expected a fraction or percentage such as 0.05 or 5%") from exc
 
 
-def _add_common_generate_args(parser: argparse.ArgumentParser, *, binary: bool = False) -> None:
+def _add_common_generate_args(parser: argparse.ArgumentParser, *, binary: bool = False, adsorption: bool = False) -> None:
     if binary:
         parser.add_argument("--film", required=True)
         parser.add_argument("--substrate", required=True)
+    elif adsorption:
+        parser.add_argument("--slab", required=True)
+        parser.add_argument("--adsorbate", required=True)
     else:
         parser.add_argument("--input", required=True)
     parser.add_argument(
@@ -83,6 +89,9 @@ def _add_common_generate_args(parser: argparse.ArgumentParser, *, binary: bool =
     parser.add_argument("--output-root", default="output")
     parser.add_argument("--max-structures", type=int, default=1000)
     parser.add_argument("--max-atoms", type=int, default=100_000)
+    parser.add_argument("--viewer", dest="viewer", action="store_true", default=True)
+    parser.add_argument("--no-viewer", dest="viewer", action="store_false")
+    parser.add_argument("--open", dest="open_viewer", action="store_true")
     parser.add_argument(
         "--lammps-element",
         action="append",
@@ -177,6 +186,21 @@ def _configure_generators(generators) -> None:
     dislocation.add_argument("--core-position", type=_pair_float, required=True)
     dislocation.add_argument("--radius", type=float, required=True)
     dislocation.add_argument("--poisson-ratio", type=float, required=True)
+
+    adsorption = _add_leaf(generators, "adsorption", "generate adsorbate configurations on a prepared slab")
+    _add_common_generate_args(adsorption, adsorption=True)
+    adsorption.add_argument("--anchor-index", type=int, default=1)
+    adsorption.add_argument("--reference-axis", type=_triple_float)
+    adsorption.add_argument("--site-type", dest="site_types", action="append")
+    adsorption.add_argument("--height", dest="heights", action="append", type=float)
+    adsorption.add_argument("--azimuth", dest="azimuths", action="append", type=float)
+    adsorption.add_argument("--tilt", dest="tilts", action="append", type=float)
+    adsorption.add_argument("--roll", dest="rolls", action="append", type=float)
+    adsorption.add_argument("--history", dest="history_policy", choices=("off", "prefer", "require"), default="off")
+    adsorption.add_argument("--surface-side", choices=("top", "bottom", "both"), default="top")
+    adsorption.add_argument("--fixed-bottom-layers", type=int, default=0)
+    adsorption.add_argument("--layer-tolerance", type=float, default=0.15)
+    adsorption.add_argument("--max-attempts", dest="max_proposal_attempts", type=int)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -358,6 +382,14 @@ def build_parser() -> argparse.ArgumentParser:
     case_inspect.add_argument("revision_id")
     case_inspect.add_argument("--store-root", default=None)
     case_inspect.set_defaults(_handler=_run_cases_inspect)
+    revision = _add_leaf(commands, "revision", "import audited manual structure revisions")
+    revision_commands = revision.add_subparsers(dest="revision_command")
+    revision_import = _add_leaf(revision_commands, "import", "import a v1/v2 coordinate revision")
+    revision_import.add_argument("--parent", required=True)
+    revision_import.add_argument("--child", required=True)
+    revision_import.add_argument("--sidecar", required=True)
+    revision_import.add_argument("--output-root", default="revisions")
+    revision_import.set_defaults(_handler=_run_revision_import)
     config = _add_leaf(commands, "config", "manage non-sensitive configuration")
     config_commands = config.add_subparsers(dest="config_command")
     set_provider = _add_leaf(config_commands, "set-provider", "set the default provider")
@@ -478,6 +510,21 @@ def build_generation_request(args: argparse.Namespace):
             "core_position": args.core_position, "radius": args.radius,
             "poisson_ratio": args.poisson_ratio,
         }
+    elif name == "adsorption":
+        parameters = {
+            "anchor_index": args.anchor_index,
+            "reference_axis": args.reference_axis,
+            "site_types": args.site_types or ["top"],
+            "heights": args.heights,
+            "azimuths": args.azimuths,
+            "tilts": args.tilts,
+            "rolls": args.rolls,
+            "history_policy": args.history_policy,
+            "surface_side": args.surface_side,
+            "fixed_bottom_layers": args.fixed_bottom_layers,
+            "layer_tolerance": args.layer_tolerance,
+            "max_proposal_attempts": args.max_proposal_attempts,
+        }
     else:
         raise ValueError(f"unknown generator: {name}")
     parameters = {key: value for key, value in parameters.items() if value is not None}
@@ -486,7 +533,12 @@ def build_generation_request(args: argparse.Namespace):
     if not output_root.is_relative_to(root):
         raise ValueError("output root must remain inside the current workspace")
     formats = [OutputFormat(value) for value in (args.formats or ["poscar"])]
-    input_refs = [args.film, args.substrate] if name == "interface" else [args.input]
+    if name == "interface":
+        input_refs = [args.film, args.substrate]
+    elif name == "adsorption":
+        input_refs = [args.slab, args.adsorbate]
+    else:
+        input_refs = [args.input]
     request = GenerationRequest(
         generator=name,
         input_refs=input_refs,
@@ -497,6 +549,7 @@ def build_generation_request(args: argparse.Namespace):
             max_atoms_per_structure=args.max_atoms,
             output_root=output_root,
         ),
+        viewer=bool(args.viewer or args.open_viewer),
     )
     request.__dict__["_lammps_element_map"] = _parse_lammps_map(args.lammps_element)
     return request
@@ -513,12 +566,21 @@ def _run_generate(args: argparse.Namespace) -> int:
         lammps_element_map=element_map or None,
     )
     result = GenerationService(source=source).run(request)
+    if args.open_viewer:
+        import webbrowser
+
+        for run in result.runs:
+            viewer_path = getattr(run, "viewer_path", None)
+            if viewer_path is not None and Path(viewer_path).is_file():
+                webbrowser.open(Path(viewer_path).resolve().as_uri())
     summary = {
         "ok": result.ok,
         "runs": [
             {
                 "generated": run.generation.generated_count,
                 "manifest": str(run.manifest_path),
+                "structures": [str(item.path) for item in getattr(run, "artifacts", [])],
+                "viewer": str(run.viewer_path) if getattr(run, "viewer_path", None) else None,
                 "errors": run.errors,
             }
             for run in result.runs
@@ -636,7 +698,7 @@ def _run_export(args: argparse.Namespace) -> int:
     manifest = RunManifest(
         run_id=run_id,
         created_at=datetime.now(timezone.utc),
-        software_version="0.1.0",
+        software_version=__version__,
         input_source="local-export",
         parameters={"operation": "export", "source_hashes": source_hashes},
         structures=manifest_structures,
@@ -908,6 +970,30 @@ def _run_cases_inspect(args: argparse.Namespace) -> int:
         raise ValueError(f"unknown case revision: {args.revision_id}")
     print(json.dumps({"case_id": item.case_id, "revision_id": item.revision_id, "status": item.status.value,
                       "artifact_relative_path": item.artifact_relative_path}, ensure_ascii=False))
+    return EXIT_SUCCESS
+
+
+def _run_revision_import(args: argparse.Namespace) -> int:
+    from llm_matgen.adsorption.revision import RevisionImporter, RevisionSidecarV1, RevisionSidecarV2
+    from llm_matgen.io.readers import read_structure
+
+    parent_path = _safe_workspace_path(args.parent)
+    child_path = _safe_workspace_path(args.child)
+    sidecar_path = _safe_workspace_path(args.sidecar)
+    output_root = _safe_workspace_path(args.output_root)
+    payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    model = RevisionSidecarV1 if int(payload.get("version", 1)) == 1 else RevisionSidecarV2
+    imported = RevisionImporter(output_root).import_revision(
+        read_structure(parent_path),
+        read_structure(child_path),
+        model.model_validate(payload),
+    )
+    print(json.dumps({
+        "version": 2,
+        "path": str(imported.path),
+        "parent_hash": imported.parent_hash,
+        "child_hash": imported.child_hash,
+    }, ensure_ascii=False))
     return EXIT_SUCCESS
 
 

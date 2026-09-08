@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
+from urllib.parse import quote
 
 from ase import Atoms
 from ase.io import write
@@ -73,10 +74,13 @@ def write_outputs_streaming(
     selected_path = run_dir / "selected.extxyz"; selected_part = selected_path.with_suffix(".extxyz.part")
     selection_path = run_dir / "selection.jsonl"; selection_part = selection_path.with_suffix(".jsonl.part")
     count = 0
-    with selection_part.open("w", encoding="utf-8") as records:
+    with (
+        selection_part.open("w", encoding="utf-8", newline="\n") as records,
+        selected_part.open("w", encoding="utf-8", newline="\n") as trajectory,
+    ):
         for frame, record in selected:
             atoms = _atoms(frame, record)
-            write(selected_part, atoms, format="extxyz", append=count > 0)
+            write(trajectory, atoms, format="extxyz")
             records.write(json.dumps(_record_dict(record), ensure_ascii=False, sort_keys=True) + "\n")
             count += 1
     if count == 0:
@@ -92,7 +96,13 @@ def write_outputs_streaming(
 
 def _atoms(frame: FilterFrame, record: SelectionRecord) -> Atoms:
     atoms = Atoms(numbers=frame.atomic_numbers, positions=frame.positions, cell=frame.cell, pbc=frame.pbc)
-    atoms.info.update({"source_name": record.source_name, "source_index": record.source_index, "source_timestep": record.source_timestep, "sampling_rank": record.sampling_rank})
+    atoms.info.update({
+        "source_name": quote(record.source_name, safe=""),
+        "source_name_encoding": "percent-utf8",
+        "source_index": record.source_index,
+        "source_timestep": record.source_timestep,
+        "sampling_rank": record.sampling_rank,
+    })
     return atoms
 
 
@@ -102,7 +112,8 @@ def _record_dict(record: SelectionRecord) -> dict[str, object]:
 
 def _atomic_write_extxyz(path: Path, atoms: list[Atoms]) -> None:
     part = path.with_suffix(path.suffix + ".part")
-    write(part, atoms, format="extxyz")
+    with part.open("w", encoding="utf-8", newline="\n") as handle:
+        write(handle, atoms, format="extxyz")
     os.replace(part, path)
 
 

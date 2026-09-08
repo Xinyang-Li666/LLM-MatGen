@@ -532,9 +532,9 @@ GENERATE_SCHEMA = {
         "generator": {
             "type": "string",
             "enum": [
-                "vacancy", "interstitial", "doping", "solid-solution",
-                "surface", "grain-boundary", "interface",
-                "stacking-fault", "dislocation",
+            "vacancy", "interstitial", "doping", "solid-solution",
+            "surface", "grain-boundary", "interface",
+                "stacking-fault", "dislocation", "adsorption",
             ],
             "description": "Type of defect/structure generator to use."
         },
@@ -559,6 +559,8 @@ GENERATE_SCHEMA = {
                 "interface: film_millers, substrate_millers (list[list[int]]), film_thickness, substrate_thickness, vacuum_thickness, gap (all float Å), max_area (float), max_area_ratio_tol, max_length_tol, max_angle_tol\n"
                 "stacking-fault: plane (list[int]), slip_vector (list[float] fractional), fault_position (float 0-1), repetitions (list[int])\n"
                 "dislocation: line_direction (list[int]), burgers_vector (list[float] Cartesian Å), slip_plane (list[int]), character (edge|screw|mixed), core_position (list[float]), radius (float Å), poisson_ratio (float)\n"
+                "adsorption: slab path plus adsorbate path, anchor_index (one-based), reference_axis (list[float] for multi-atom rigid adsorbates), "
+                "site_types, heights, azimuths, tilts, rolls, surface_side, history_policy (off|prefer|require), viewer (bool)\n"
             ),
         },
         "seed": {

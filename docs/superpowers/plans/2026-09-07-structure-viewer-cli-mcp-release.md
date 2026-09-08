@@ -6,7 +6,7 @@
 
 为十类生成器提供安全离线 viewer，将 adsorption/cases/revision 接入当前 CLI、服务与 MCP，更新文档并完成可安装发布验证。
 
-## Task 1：引入受许可约束的离线 viewer 资源
+## Task 1：引入受许可约束的离线 viewer 资源 `[completed]`
 
 **Files:**
 
@@ -24,7 +24,7 @@
 5. 将 assets 加入 setuptools package-data 和 sdist manifest。
 6. 运行 viewer/package 测试并提交：`feat: add licensed offline structure viewer`。
 
-## Task 2：把 viewer 接入统一 pipeline
+## Task 2：把 viewer 接入统一 pipeline `[completed]`
 
 **Files:**
 
@@ -40,7 +40,7 @@
 5. 运行 pipeline 和所有 generator export 测试。
 6. 提交：`feat: generate one viewer per structure run`。
 
-## Task 3：扩展统一服务的类型化输入
+## Task 3：扩展统一服务的类型化输入 `[completed]`
 
 **Files:**
 
@@ -56,7 +56,7 @@
 5. adsorption 不再通过 CLI 直接绕开 service/pipeline。
 6. 运行 service 测试并提交：`refactor: resolve typed generator inputs uniformly`。
 
-## Task 4：整合 CLI 且保留现有命令
+## Task 4：整合 CLI 且保留现有命令 `[completed]`
 
 **Files:**
 
@@ -73,7 +73,7 @@
 5. 输出 JSON 包含 manifest、structures、viewer、检查摘要和 fallback reason。
 6. 运行全部 CLI 测试并提交：`feat: expose adsorption revision and viewer commands`。
 
-## Task 5：提供结构化 MCP 工具
+## Task 5：提供结构化 MCP 工具 `[completed]`
 
 **Files:**
 
@@ -89,7 +89,7 @@
 5. surface 多 termination 返回候选 metadata，不自动选择。
 6. 运行 MCP/orchestration 测试并提交：`feat: expose typed adsorption mcp tools`。
 
-## Task 6：更新自然语言 harness 与 skill
+## Task 6：更新自然语言 harness 与 skill `[completed]`
 
 **Files:**
 
@@ -104,7 +104,7 @@
 4. 添加 history off/prefer/require 示例和失败提示。
 5. 运行文档/harness 测试并提交：`docs: teach llm clients the adsorption workflow`。
 
-## Task 7：更新公共文档和发布安全规则
+## Task 7：更新公共文档和发布安全规则 `[completed]`
 
 **Files:**
 
@@ -124,7 +124,7 @@
 5. 保留 3Dmol license 和来源说明，不将其误报为待删除第三方文件。
 6. 运行文档与 release safety 测试并提交：`docs: document adsorption cases revisions and viewer`。
 
-## Task 8：统一版本并验证构建产物
+## Task 8：统一版本并验证构建产物 `[completed]`
 
 **Files:**
 
@@ -141,7 +141,7 @@
 5. 检查 wheel/sdist 内容不含下载源码包、个人配置、案例 DB、输出或凭据。
 6. 提交：`chore: prepare llm-matgen 0.2.0 release candidate`。
 
-## Task 9：完整回归与跨平台验收
+## Task 9：完整回归与跨平台验收 `[completed]`
 
 1. 运行 `python -m pytest -q`，要求 tracked 测试全部通过。
 2. 分别运行 generator、trajectory、adsorption、CLI、MCP、documentation 和 release safety 测试组，记录数量。

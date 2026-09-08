@@ -71,8 +71,8 @@ def _candidate_key(candidate: InplaneTransform) -> tuple:
     identity_distance = abs(p - 1) + abs(q) + abs(r) + abs(s - 1)
     return (
         candidate.area_multiplier,
-        candidate.inplane_aspect_ratio,
-        candidate.total_angle_error,
+        round(candidate.inplane_aspect_ratio, 12),
+        round(candidate.total_angle_error, 12),
         identity_distance,
         p,
         q,
@@ -143,7 +143,7 @@ def find_inplane_transform(
     return min(
         pool,
         key=lambda candidate: (
-            candidate.total_angle_error,
+            round(candidate.total_angle_error, 12),
             *_candidate_key(candidate),
         ),
     )

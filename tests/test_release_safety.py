@@ -27,6 +27,9 @@ def test_gitignore_covers_local_secrets_and_generated_artifacts() -> None:
         "tests/nl-tests/mp-downloads/",
         "tests/nl-tests/output/",
         "tests/nl-tests/*-result.json",
+        ".llm-matgen/",
+        "revisions/",
+        ".sqs-deps/",
     } <= entries
 
 
@@ -86,6 +89,27 @@ def test_scanner_detects_json_escaped_absolute_paths() -> None:
     findings = scan_text(Path("state.json"), json.dumps({"path": escaped_path}))
 
     assert {finding.rule for finding in findings} == {"personal-absolute-path"}
+
+
+def test_scanner_detects_ssh_wrappers_without_echoing_commands() -> None:
+    findings = scan_text(
+        Path("wrapper.ps1"),
+        "ProxyCommand powershell -File C:\\Users\\alice\\ssh-wrapper.ps1\n",
+    )
+    assert {finding.rule for finding in findings} == {"personal-absolute-path", "ssh-wrapper"}
+
+
+def test_public_docs_cover_viewer_cases_and_generation_boundary() -> None:
+    texts = [
+        (ROOT / "README.md").read_text(encoding="utf-8"),
+        (ROOT / "docs/user-guide.zh-CN.md").read_text(encoding="utf-8"),
+        (ROOT / "docs/api.md").read_text(encoding="utf-8"),
+        (ROOT / "docs/mcp.md").read_text(encoding="utf-8"),
+    ]
+    for text in texts:
+        assert "viewer" in text.lower()
+        assert "adsorption" in text.lower()
+        assert "结构生成" in text or "structure generation" in text.lower()
 
 
 def test_tracked_repository_text_is_release_safe() -> None:

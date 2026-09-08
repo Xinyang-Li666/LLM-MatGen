@@ -9,6 +9,9 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, ValidationError
 
 from llm_matgen.generators import (
+    AdsorptionGenerator,
+    AdsorptionInput,
+    AdsorptionParams,
     DislocationGenerator,
     DislocationParams,
     DopingGenerator,
@@ -52,13 +55,21 @@ class GenerationRequest(BaseModel):
     parameters: dict[str, Any] = Field(default_factory=dict)
     export_options: ExportOptions = Field(default_factory=ExportOptions)
     limits: ExecutionLimits
+    viewer: bool = True
 
 
 @dataclass(frozen=True)
 class GeneratorEntry:
     factory: type
     params_model: type[BaseModel]
-    binary: bool = False
+    inputs: tuple["GeneratorInputSpec", ...]
+
+
+@dataclass(frozen=True)
+class GeneratorInputSpec:
+    role: str
+    kind: str
+    cardinality: str = "one"
 
 
 @dataclass
@@ -71,16 +82,22 @@ class ServiceResult:
 
 
 def default_generator_registry() -> dict[str, GeneratorEntry]:
+    unary = (GeneratorInputSpec("structure", "structure", "many"),)
     return {
-        "vacancy": GeneratorEntry(VacancyGenerator, VacancyParams),
-        "interstitial": GeneratorEntry(InterstitialGenerator, InterstitialParams),
-        "doping": GeneratorEntry(DopingGenerator, DopingParams),
-        "solid-solution": GeneratorEntry(SolidSolutionGenerator, SolidSolutionParams),
-        "surface": GeneratorEntry(SurfaceGenerator, SurfaceParams),
-        "grain-boundary": GeneratorEntry(GrainBoundaryGenerator, GrainBoundaryParams),
-        "interface": GeneratorEntry(InterfaceGenerator, InterfaceParams, binary=True),
-        "stacking-fault": GeneratorEntry(StackingFaultGenerator, StackingFaultParams),
-        "dislocation": GeneratorEntry(DislocationGenerator, DislocationParams),
+        "vacancy": GeneratorEntry(VacancyGenerator, VacancyParams, unary),
+        "interstitial": GeneratorEntry(InterstitialGenerator, InterstitialParams, unary),
+        "doping": GeneratorEntry(DopingGenerator, DopingParams, unary),
+        "solid-solution": GeneratorEntry(SolidSolutionGenerator, SolidSolutionParams, unary),
+        "surface": GeneratorEntry(SurfaceGenerator, SurfaceParams, unary),
+        "grain-boundary": GeneratorEntry(GrainBoundaryGenerator, GrainBoundaryParams, unary),
+        "interface": GeneratorEntry(InterfaceGenerator, InterfaceParams, (
+            GeneratorInputSpec("film", "structure"), GeneratorInputSpec("substrate", "structure"),
+        )),
+        "stacking-fault": GeneratorEntry(StackingFaultGenerator, StackingFaultParams, unary),
+        "dislocation": GeneratorEntry(DislocationGenerator, DislocationParams, unary),
+        "adsorption": GeneratorEntry(AdsorptionGenerator, AdsorptionParams, (
+            GeneratorInputSpec("slab", "structure"), GeneratorInputSpec("adsorbate", "molecule"),
+        )),
     }
 
 
@@ -98,11 +115,22 @@ class GenerationService:
         entry = self.registry.get(request.generator)
         if entry is None:
             raise GenerationServiceError(f"unknown generator: {request.generator}")
-        expected_inputs = 2 if entry.binary else None
-        if expected_inputs is not None and len(request.input_refs) != expected_inputs:
-            raise GenerationServiceError("interface generation requires exactly two input structures")
+        repeated_unary = len(entry.inputs) == 1 and entry.inputs[0].cardinality == "many"
+        if not repeated_unary and len(request.input_refs) != len(entry.inputs):
+            if request.generator == "interface":
+                raise GenerationServiceError("interface generation requires exactly two input structures")
+            roles = ", ".join(spec.role for spec in entry.inputs)
+            raise GenerationServiceError(f"{request.generator} requires inputs in order: {roles}")
+        if repeated_unary and not request.input_refs:
+            raise GenerationServiceError(f"{request.generator} requires at least one input structure")
 
-        parameters = dict(request.parameters)
+        input_parameters = {}
+        if request.generator == "adsorption":
+            for key in ("anchor_index", "reference_axis", "charge", "spin_multiplicity", "denticity", "rigid"):
+                if key in request.parameters:
+                    input_parameters[key] = request.parameters[key]
+
+        parameters = {key: value for key, value in request.parameters.items() if key not in input_parameters}
         for name, limit in (
             ("max_structures", request.limits.max_structures),
             ("max_atoms_per_structure", request.limits.max_atoms_per_structure),
@@ -116,29 +144,46 @@ class GenerationService:
         except ValidationError as exc:
             raise GenerationServiceError(f"invalid generator parameters: {exc}") from exc
 
-        resolved = [self.source.get(reference) for reference in request.input_refs]
+        if repeated_unary:
+            resolved = [self.source.get(reference) for reference in request.input_refs]
+        else:
+            resolved = []
+            for spec, reference in zip(entry.inputs, request.input_refs, strict=True):
+                resolver = self.source.get if spec.kind == "structure" else getattr(self.source, "get_molecule", None)
+                if resolver is None:
+                    raise GenerationServiceError(f"source cannot resolve {spec.kind} role {spec.role}")
+                resolved.append(resolver(reference))
         for item in resolved:
-            if len(item.structure) > request.limits.max_atoms_per_structure:
+            value = getattr(item, "structure", None) or getattr(item, "molecule", None)
+            if len(value) > request.limits.max_atoms_per_structure:
                 raise GenerationServiceError(
-                    f"input atom limit exceeded: {len(item.structure)} > "
+                    f"input atom limit exceeded: {len(value)} > "
                     f"{request.limits.max_atoms_per_structure}"
                 )
 
         pipeline = GenerationPipeline(request.limits.output_root)
         generator = entry.factory()
         runs: list[PipelineResult] = []
-        if entry.binary:
+        if request.generator == "interface":
             inputs = InterfaceInput(
                 film=resolved[0].structure,
                 substrate=resolved[1].structure,
             )
             runs.append(
-                pipeline.run(generator, inputs, params, request.export_options)
+                pipeline.run(generator, inputs, params, request.export_options, viewer=request.viewer)
             )
+        elif request.generator == "adsorption":
+            inputs = AdsorptionInput(
+                slab=resolved[0].structure,
+                molecule=resolved[1].molecule,
+                anchor_index=input_parameters.pop("anchor_index", 1),
+                **input_parameters,
+            )
+            runs.append(pipeline.run(generator, inputs, params, request.export_options, viewer=request.viewer))
         else:
             for item in resolved:
                 runs.append(
-                    pipeline.run(generator, item.structure, params, request.export_options)
+                    pipeline.run(generator, item.structure, params, request.export_options, viewer=request.viewer)
                 )
         for run in runs:
             if run.generation.generated_count > request.limits.max_structures:
