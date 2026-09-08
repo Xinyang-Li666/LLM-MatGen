@@ -15,3 +15,23 @@ def test_public_subpackages_export_core_types():
     assert LightStructureChecker is not None
     assert ExportOptions().formats
     assert StructureExporter is not None
+
+
+def test_trajectory_package_exports_runtime_contracts():
+    from llm_matgen.trajectories import (
+        FilterConfig,
+        FilterResult,
+        SamplingMethod,
+        TrajectoryFrame,
+        filter_trajectory,
+        random_indices,
+        uniform_indices,
+    )
+
+    assert FilterConfig().dimensions
+    assert FilterResult is not None
+    assert SamplingMethod.UNIFORM.value == "uniform"
+    assert TrajectoryFrame is not None
+    assert filter_trajectory is not None
+    assert random_indices(3, 2, seed=1) == [0, 2]
+    assert uniform_indices(3, 2) == [0, 2]
