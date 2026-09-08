@@ -73,10 +73,13 @@ def write_outputs_streaming(
     selected_path = run_dir / "selected.extxyz"; selected_part = selected_path.with_suffix(".extxyz.part")
     selection_path = run_dir / "selection.jsonl"; selection_part = selection_path.with_suffix(".jsonl.part")
     count = 0
-    with selection_part.open("w", encoding="utf-8") as records:
+    with (
+        selection_part.open("w", encoding="utf-8", newline="\n") as records,
+        selected_part.open("w", encoding="utf-8", newline="\n") as trajectory,
+    ):
         for frame, record in selected:
             atoms = _atoms(frame, record)
-            write(selected_part, atoms, format="extxyz", append=count > 0)
+            write(trajectory, atoms, format="extxyz")
             records.write(json.dumps(_record_dict(record), ensure_ascii=False, sort_keys=True) + "\n")
             count += 1
     if count == 0:
@@ -102,7 +105,8 @@ def _record_dict(record: SelectionRecord) -> dict[str, object]:
 
 def _atomic_write_extxyz(path: Path, atoms: list[Atoms]) -> None:
     part = path.with_suffix(path.suffix + ".part")
-    write(part, atoms, format="extxyz")
+    with part.open("w", encoding="utf-8", newline="\n") as handle:
+        write(handle, atoms, format="extxyz")
     os.replace(part, path)
 
 
