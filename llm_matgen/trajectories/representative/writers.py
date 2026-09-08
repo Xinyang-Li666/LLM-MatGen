@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
+from urllib.parse import quote
 
 from ase import Atoms
 from ase.io import write
@@ -95,7 +96,13 @@ def write_outputs_streaming(
 
 def _atoms(frame: FilterFrame, record: SelectionRecord) -> Atoms:
     atoms = Atoms(numbers=frame.atomic_numbers, positions=frame.positions, cell=frame.cell, pbc=frame.pbc)
-    atoms.info.update({"source_name": record.source_name, "source_index": record.source_index, "source_timestep": record.source_timestep, "sampling_rank": record.sampling_rank})
+    atoms.info.update({
+        "source_name": quote(record.source_name, safe=""),
+        "source_name_encoding": "percent-utf8",
+        "source_index": record.source_index,
+        "source_timestep": record.source_timestep,
+        "sampling_rank": record.sampling_rank,
+    })
     return atoms
 
 
