@@ -105,3 +105,22 @@ def test_surface_public_docs_cover_near_orthogonal_cells():
 def test_design_doc_does_not_advertise_missing_ask_command():
     design = (ROOT / "docs/llm-matgen-design.md").read_text(encoding="utf-8")
     assert "llm-matgen ask" not in design
+
+
+def test_natural_language_adsorption_workflow_documents_typed_tools_and_viewer():
+    skill = (ROOT / "integrations/skills/llm-matgen/SKILL.md").read_text(encoding="utf-8")
+    workflow = (ROOT / "docs/examples/natural-language-workflows.md").read_text(encoding="utf-8")
+    harness = (ROOT / "tests/nl-tests/harness.py").read_text(encoding="utf-8")
+    for text in (skill, workflow):
+        for term in ("generate_surface", "generate_adsorption", "history", "viewer", "termination"):
+            assert term in text
+    assert "adsorption" in harness
+    assert "reference_axis" in harness
+    assert "cases_scan" not in skill
+
+
+def test_natural_language_docs_keep_model_credentials_outside_matgen():
+    skill = (ROOT / "integrations/skills/llm-matgen/SKILL.md").read_text(encoding="utf-8").lower()
+    workflow = (ROOT / "docs/examples/natural-language-workflows.md").read_text(encoding="utf-8").lower()
+    assert "客户端管理" in skill or "client manages" in skill
+    assert "client owns" in workflow or "客户端管理" in workflow

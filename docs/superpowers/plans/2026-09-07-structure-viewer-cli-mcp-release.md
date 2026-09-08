@@ -89,7 +89,7 @@
 5. surface 多 termination 返回候选 metadata，不自动选择。
 6. 运行 MCP/orchestration 测试并提交：`feat: expose typed adsorption mcp tools`。
 
-## Task 6：更新自然语言 harness 与 skill
+## Task 6：更新自然语言 harness 与 skill `[completed]`
 
 **Files:**
 
