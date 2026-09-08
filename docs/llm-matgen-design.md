@@ -1043,7 +1043,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "llm-matgen"
-version = "0.1.0"
+version = "0.2.0rc1"
 description = "LLM-driven Material Structure Generation Workflow"
 requires-python = ">=3.10"
 dependencies = [

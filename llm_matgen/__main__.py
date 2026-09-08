@@ -7,6 +7,8 @@ import json
 import sys
 from pathlib import Path
 
+from llm_matgen import __version__
+
 EXIT_SUCCESS = 0
 EXIT_PARAMETER = 2
 EXIT_PARTIAL = 3
@@ -696,7 +698,7 @@ def _run_export(args: argparse.Namespace) -> int:
     manifest = RunManifest(
         run_id=run_id,
         created_at=datetime.now(timezone.utc),
-        software_version="0.1.0",
+        software_version=__version__,
         input_source="local-export",
         parameters={"operation": "export", "source_hashes": source_hashes},
         structures=manifest_structures,

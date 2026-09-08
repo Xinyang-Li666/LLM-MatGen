@@ -32,7 +32,7 @@ python -m llm_matgen sample representative trajectory.extxyz \
 也不承诺 DFT 收敛、训练质量或发表质量。SOAP-FPS 与 RDF-FPS 是两个完全
 独立但可以串联的后端。
 
-LLM-MatGen 用于生成材料晶体结构，提供命令行、Python 和 MCP 接口，覆盖十类结构生成器。程序默认执行轻量检查，并可导出 POSCAR、CIF 和 LAMMPS data；生成运行还可产生离线 viewer。
+LLM-MatGen `0.2.0-rc.1` 用于生成材料晶体结构，提供命令行、Python 和 MCP 接口，覆盖十类结构生成器。程序默认执行轻量检查，并可导出 POSCAR、CIF 和 LAMMPS data；生成运行还可产生离线 viewer。
 
 本项目只负责结构生成与基础几何检查。用户需要自行完成结构弛豫、能量与稳定性计算，并判断结构是否适合实验、工程应用或学术发表。
 

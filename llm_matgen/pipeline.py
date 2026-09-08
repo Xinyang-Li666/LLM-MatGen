@@ -9,6 +9,8 @@ from uuid import uuid4
 
 from pymatgen.core import Structure
 
+from llm_matgen import __version__
+
 from llm_matgen.checks.checker import LightStructureChecker
 from llm_matgen.checks.models import CheckIssue, CheckReport
 from llm_matgen.generators.models import GenerationResult, JsonValue
@@ -39,7 +41,7 @@ class GenerationPipeline:
         *,
         checker: LightStructureChecker | None = None,
         exporter: StructureExporter | None = None,
-        software_version: str = "0.1.0",
+        software_version: str = __version__,
     ):
         self.output_root = Path(output_root).resolve()
         self.checker = checker or LightStructureChecker()

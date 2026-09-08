@@ -124,7 +124,7 @@
 5. 保留 3Dmol license 和来源说明，不将其误报为待删除第三方文件。
 6. 运行文档与 release safety 测试并提交：`docs: document adsorption cases revisions and viewer`。
 
-## Task 8：统一版本并验证构建产物
+## Task 8：统一版本并验证构建产物 `[completed]`
 
 **Files:**
 

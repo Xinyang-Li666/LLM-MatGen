@@ -10,6 +10,8 @@ import os
 from pathlib import Path
 from typing import Any, Iterable
 
+from llm_matgen import __version__
+
 
 class MCPProtocolError(ValueError):
     def __init__(self, code: str, message: str):
@@ -60,7 +62,7 @@ class MCPServer:
             return {"jsonrpc": "2.0", "id": req_id, "result": {
                 "protocolVersion": self.protocol_version,
                 "capabilities": {"tools": {}, "resources": {}},
-                "serverInfo": {"name": "llm-matgen", "version": "0.1.0"}}}
+                "serverInfo": {"name": "llm-matgen", "version": __version__}}}
         if method == "tools/list":
             return {"jsonrpc": "2.0", "id": req_id,
                     "result": {"tools": [self._tool_payload(t) for t in self._tools()]}}
