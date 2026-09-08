@@ -124,8 +124,12 @@ class MCPServer:
             except Exception as exc:
                 raise MCPProtocolError("invalid_manifest", "manifest could not be read") from exc
         text = path.read_text(encoding="utf-8")
+        mime_type = {
+            ".html": "text/html",
+            ".json": "application/json",
+        }.get(path.suffix.lower(), "text/plain")
         return {"jsonrpc": "2.0", "id": req_id, "result": {"contents": [{
-            "uri": uri, "mimeType": "application/json" if path.suffix == ".json" else "text/plain",
+            "uri": uri, "mimeType": mime_type,
             "text": text}]}}
 
 

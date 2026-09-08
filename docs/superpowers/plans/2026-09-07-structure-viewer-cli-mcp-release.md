@@ -73,7 +73,7 @@
 5. 输出 JSON 包含 manifest、structures、viewer、检查摘要和 fallback reason。
 6. 运行全部 CLI 测试并提交：`feat: expose adsorption revision and viewer commands`。
 
-## Task 5：提供结构化 MCP 工具
+## Task 5：提供结构化 MCP 工具 `[completed]`
 
 **Files:**
 
