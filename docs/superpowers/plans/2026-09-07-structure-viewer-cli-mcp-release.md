@@ -141,7 +141,7 @@
 5. 检查 wheel/sdist 内容不含下载源码包、个人配置、案例 DB、输出或凭据。
 6. 提交：`chore: prepare llm-matgen 0.2.0 release candidate`。
 
-## Task 9：完整回归与跨平台验收
+## Task 9：完整回归与跨平台验收 `[in_progress]`
 
 1. 运行 `python -m pytest -q`，要求 tracked 测试全部通过。
 2. 分别运行 generator、trajectory、adsorption、CLI、MCP、documentation 和 release safety 测试组，记录数量。
