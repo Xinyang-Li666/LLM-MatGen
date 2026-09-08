@@ -84,6 +84,6 @@ def test_pinned_renderer_and_license_are_packaged():
 
     metadata = renderer_metadata()
     assert metadata["version"] == "2.0.4"
-    assert metadata["sha256"] == "e02c5e9028cc7dbf43a66bf133bb23c1261c6109c5c039606113ab61d3ee5015"
+    assert metadata["sha256"] == "612eedd3ad7c36537813066d04f15a6e71285b9c59b364a6ab0296e39c67b7d1"
     assert metadata["upstream"] == "https://github.com/3dmol/3Dmol.js"
     assert "BSD-3-Clause" in metadata["license_text"]

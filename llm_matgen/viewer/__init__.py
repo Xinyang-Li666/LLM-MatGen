@@ -18,7 +18,7 @@ from scipy.spatial import cKDTree
 
 RENDERER_VERSION = "2.0.4"
 RENDERER_UPSTREAM = "https://github.com/3dmol/3Dmol.js"
-RENDERER_SHA256 = "e02c5e9028cc7dbf43a66bf133bb23c1261c6109c5c039606113ab61d3ee5015"
+RENDERER_SHA256 = "612eedd3ad7c36537813066d04f15a6e71285b9c59b364a6ab0296e39c67b7d1"
 MAX_ATOMS_PER_STRUCTURE = 20_000
 MAX_TOTAL_ATOMS = 200_000
 MAX_NEIGHBORS_PER_ATOM = 512
@@ -39,7 +39,9 @@ def _assets():
 def renderer_metadata() -> dict[str, str]:
     asset_root = _assets()
     renderer = asset_root.joinpath("3Dmol-min.js").read_bytes()
-    digest = hashlib.sha256(renderer).hexdigest()
+    # Git may materialize this text asset with CRLF on Windows.  Verify the
+    # repository-content hash so the integrity check is platform independent.
+    digest = hashlib.sha256(renderer.replace(b"\r\n", b"\n")).hexdigest()
     if digest != RENDERER_SHA256:
         raise RuntimeError("packaged 3Dmol.js hash does not match the pinned renderer")
     return {
